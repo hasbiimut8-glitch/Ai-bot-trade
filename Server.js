@@ -40,8 +40,6 @@ app.get('/api/run-bot', async (req, res) => {
     }
 });
 
-const port = process.env.PORT || 3000;
-
 app.listen(port, () => {
     console.log(`Server berjalan di port ${port}`);
 });
