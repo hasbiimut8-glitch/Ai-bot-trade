@@ -23,16 +23,27 @@ let serverLogs = {};
 let cycleCount = 0;
 let consecutiveHolds = 0;
 
-// Fungsi inti untuk ambil data pasar & AI
+// Fungsi inti untuk ambil data pasar & AI dengan Prompt Super Detail
 async function runBotCycle() {
     cycleCount++;
     try {
         const marketRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true');
         const marketData = await marketRes.json();
         const btcPrice = marketData.bitcoin.usd;
-        const btcChange = marketData.bitcoin.usd_24h_change.toFixed(2);
+        const btcChange = parseFloat(marketData.bitcoin.usd_24h_change.toFixed(2));
 
-        const prompt = `Analisis harga Bitcoin saat ini: $${btcPrice} (Perubahan 24 jam: ${btcChange}%). Sebagai trader profesional, tentukan arah 3 menit ke depan. Utamakan memilih "BUY" atau "SELL" jika ada peluang fluktuasi, dan gunakan "HOLD" hanya jika pasar benar-benar datar/sangat berisiko. Jawab dengan format kata pertama: BUY, SELL, atau HOLD, diikuti alasan singkat 1 kalimat.`;
+        // PROMPT SUPER DETAIL & OBJEKTIF
+        const prompt = `
+Analisis kondisi pasar Bitcoin saat ini secara ketat:
+- Harga BTC terkini: $${btcPrice}
+- Perubahan tren 24 Jam: ${btcChange}%
+
+Aturan Mutlak Analisis:
+1. Jika perubahan 24 jam bernilai POSITIF (> 0%), prioritaskan "BUY" atau "HOLD". DILARANG keras memilih "SELL" kecuali ada indikasi pembalikan arah yang sangat ekstrem.
+2. Jika perubahan 24 jam bernilai NEGATIF (< 0%), prioritaskan "SELL" atau "HOLD". DILARANG keras memilih "BUY" kecuali ada indikasi pantulan (*rebound*) yang kuat.
+3. Jika pasar bergerak datar atau ragu-ragu, WAJIB jawab "HOLD" agar tidak salah buka posisi.
+4. Jawab HANYA dengan format kata pertama: "BUY", "SELL", atau "HOLD", diikuti titik, lalu berikan alasan singkat maksimal 1 kalimat.
+`;
         
         let aiAnalysisText = "Analisis pasar diproses...";
         let actionDecision = "HOLD";
@@ -46,9 +57,10 @@ async function runBotCycle() {
                 aiAnalysisText = aiResponse.text;
                 const textUpper = aiResponse.text.toUpperCase();
                 
-                if (textUpper.includes("BUY") && !textUpper.includes("NO BUY")) {
+                // Ekstraksi keputusan yang lebih ketat
+                if (textUpper.startsWith("BUY") || (textUpper.includes("BUY") && !textUpper.includes("NO BUY"))) {
                     actionDecision = "BUY";
-                } else if (textUpper.includes("SELL") && !textUpper.includes("NO SELL")) {
+                } else if (textUpper.startsWith("SELL") || (textUpper.includes("SELL") && !textUpper.includes("NO SELL"))) {
                     actionDecision = "SELL";
                 } else {
                     actionDecision = "HOLD";
@@ -56,18 +68,17 @@ async function runBotCycle() {
             }
         } catch (e) {
             console.warn("AI fallback server:", e.message);
+            // Fallback berdasarkan data real-time, bukan paksaan
             actionDecision = btcChange >= 0 ? "BUY" : "SELL";
         }
 
-        if (actionDecision === "HOLD") {
-            consecutiveHolds++;
-            if (consecutiveHolds >= 3) {
-                actionDecision = btcChange >= 0 ? "BUY" : "SELL";
-                aiAnalysisText += ` (Dipaksa aktif karena terlalu banyak HOLD)`;
-                consecutiveHolds = 0;
-            }
-        } else {
-            consecutiveHolds = 0;
+        // Filter tambahan: Jika data CoinGecko hijau (positif) tapi AI bandel kasih SELL, override jadi HOLD atau BUY
+        if (btcChange > 0 && actionDecision === "SELL") {
+            actionDecision = "HOLD";
+            aiAnalysisText += " [Override Sistem: Pasar Hijau, SELL ditolak]";
+        } else if (btcChange < 0 && actionDecision === "BUY") {
+            actionDecision = "HOLD";
+            aiAnalysisText += " [Override Sistem: Pasar Merah, BUY ditolak]";
         }
 
         // 3. Kelola Active Trades & Timer Auto-Close (Durasi 3 menit / 180 detik)
@@ -80,7 +91,6 @@ async function runBotCycle() {
                 let profitPercentage = (diff / trade.entryPrice) * 100 * 2; // Leverage 2x
                 let pnlResult = (trade.amount * profitPercentage) / 100;
                 
-                // Modal awal dikembalikan utuh ditambah/dikurangi PnL
                 let returnedCapital = trade.amount + pnlResult;
                 if (returnedCapital < 0) returnedCapital = 0;
 
@@ -101,12 +111,12 @@ async function runBotCycle() {
             }
         }
 
-        // 4. Eksekusi Buka Posisi (DIKUNCI MAKSIMAL 1 POSISI, MODAL $1,000)
-        const tradeAmount = 1000; // Modal per trade diperbesar jadi $1,000
-        const durationSeconds = 180; // 3 Menit
+        // 4. Eksekusi Buka Posisi (Maksimal 1 Posisi, Modal $1,000)
+        const tradeAmount = 1000; 
+        const durationSeconds = 180; 
 
         if ((actionDecision === "BUY" || actionDecision === "SELL") && virtualBalance >= tradeAmount && activeTrades.length < 1) {
-            virtualBalance -= tradeAmount; // Potong saldo $1,000 untuk posisi aktif
+            virtualBalance -= tradeAmount; 
             
             const newTrade = {
                 type: actionDecision,
@@ -139,7 +149,7 @@ async function runBotCycle() {
             timestamp: new Date().toLocaleTimeString()
         };
 
-        console.log(`[Loop #${cycleCount}] BTC: $${btcPrice} | Aksi: ${actionDecision} | Saldo: $${virtualBalance.toFixed(2)} | Posisi Aktif: ${activeTrades.length}`);
+        console.log(`[Loop #${cycleCount}] BTC: $${btcPrice} (${btcChange}%) | Aksi: ${actionDecision} | Saldo: $${virtualBalance.toFixed(2)}`);
     } catch (error) {
         console.error("Error pada loop server:", error.message);
     }
@@ -148,14 +158,14 @@ async function runBotCycle() {
 app.get('/api/start-bot', async (req, res) => {
     if (!isBotRunning) {
         isBotRunning = true;
-        console.log("🤖 Bot trading 24/7 dijalankan (Modal $1,000, Max 1 Posisi).");
+        console.log("🤖 Bot trading 24/7 dijalankan dengan Prompt Super Detail.");
         
         await runBotCycle();
 
         if (botInterval) clearInterval(botInterval);
         botInterval = setInterval(runBotCycle, 30000);
     }
-    res.json({ success: true, message: "Bot aktif dengan konfigurasi baru!" });
+    res.json({ success: true, message: "Bot aktif dengan strategi baru!" });
 });
 
 app.get('/api/stop-bot', (req, res) => {
@@ -175,4 +185,4 @@ app.get('/api/bot-status', (req, res) => {
 app.listen(port, () => {
     console.log(`Server berjalan di port ${port}`);
 });
-            
+             
