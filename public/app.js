@@ -85,21 +85,24 @@ document.getElementById('btn-run').addEventListener('click', async () => {
             isRunning = true;
             document.getElementById('btn-run').classList.add('hidden');
             document.getElementById('btn-stop').classList.remove('hidden');
-            document.getElementById('ai-status-text').innerText = "🤖 Bot aktif berjalan di Server Cloud 24/7!";
+            document.getElementById('ai-status-text').innerText = "🤖 Bot aktif berjalan 24/7!";
             
-            // Mulai sinkronisasi status & data dari server setiap 5 detik
-            if (loopInterval) clearInterval(loopInterval);
-            loopInterval = setInterval(fetchServerStatus, 5000);
-            
-            // Langsung jalankan siklus lokal pertama
+            // Jalankan siklus pertama kali secara langsung
             runWorkflowCycle();
+            
+            // Set interval agar siklus berulang otomatis setiap 5 detik
+            if (loopInterval) clearInterval(loopInterval);
+            loopInterval = setInterval(() => {
+                if (isRunning) {
+                    runWorkflowCycle();
+                }
+            }, 5000);
         }
     } catch (e) {
         console.error("Gagal menyalakan bot ke server:", e);
         document.getElementById('ai-status-text').innerText = "⚠️ Gagal terhubung ke server.";
     }
 });
-
 // Tombol Berhentikan Bot
 document.getElementById('btn-stop').addEventListener('click', async () => {
     try {
