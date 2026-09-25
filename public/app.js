@@ -72,7 +72,7 @@ function stopWorkflowUI() {
     document.getElementById('ai-status-text').innerText = "Siklus dihentikan.";
 }
 
-// Fungsi menarik data terbaru dari server backend
+// Fungsi menarik data terbaru dari server backend sekaligus menyalakan animasi n8n
 async function syncWithServer() {
     try {
         const res = await fetch('/api/bot-status');
@@ -81,27 +81,21 @@ async function syncWithServer() {
         if (result.running && result.data) {
             const { price, change, analysis, decision, balance, tradeHistory } = result.data;
             
-            // Update UI Harga & Chart
+            // 1. Jalankan animasi kotak n8n (Node 1 ke Node 4) agar visualnya hidup
+            triggerWorkflowNodesAnimation();
+
+            // 2. Update UI Harga, Chart, & Status AI
             updateLiveChart(price);
             document.getElementById('crypto-price').innerText = `$${price.toLocaleString()}`;
             const changeEl = document.getElementById('crypto-change');
             changeEl.innerText = `${change >= 0 ? '+' : ''}${change}%`;
             changeEl.className = `text-[11px] font-semibold ${change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
             
-            // Update Saldo & Status
             document.getElementById('virtual-pnl').innerText = `$${balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
             document.getElementById('ai-status-text').innerText = `💡 Sinyal: ${decision} | AI: ${analysis.slice(0, 35)}...`;
 
-            if (decision === "BUY") {
-                document.getElementById('bot-position').innerText = "BUY (LONG)";
-                document.getElementById('bot-position').className = "text-xs font-bold text-emerald-400";
-            } else if (decision === "SELL") {
-                document.getElementById('bot-position').innerText = "SELL (SHORT)";
-                document.getElementById('bot-position').className = "text-xs font-bold text-rose-400";
-            } else {
-                document.getElementById('bot-position').innerText = "HOLD (PANTAU)";
-                document.getElementById('bot-position').className = "text-xs font-bold text-amber-400";
-            }
+            // Update badge posisi BUY/SELL/HOLD
+            updatePositionUI(decision);
 
             // Update Tabel Riwayat
             renderHistoryTable(tradeHistory);
@@ -110,7 +104,6 @@ async function syncWithServer() {
         console.warn("Gagal sinkronisasi data server.");
     }
 }
-
 function renderHistoryTable(history) {
     const tbody = document.getElementById('history-table-body');
     if (!tbody) return;
