@@ -13,7 +13,6 @@ const ai = new GoogleGenAI({ apiKey: 'AQ.Ab8RN6KkAKaKq9epVyDmaL7DPWlj98JlC9kAulm
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// State / Status Bot di Server Cloud
 let isBotRunning = false;
 let botInterval = null;
 let virtualBalance = 10000;
@@ -21,16 +20,15 @@ let tradeHistory = [];
 let activeTrades = [];
 let serverLogs = {};
 let cycleCount = 0;
+let consecutiveHolds = 0; // Penghitung untuk mencegah terlalu banyak HOLD
 
-// Endpoint untuk menyalakan bot 24/7 di server
 app.get('/api/start-bot', (req, res) => {
     if (!isBotRunning) {
         isBotRunning = true;
-        console.log("🤖 Bot trading otomatis 24/7 dijalankan di Cloud Server Railway (Interval 30s, Trade 3m).");
+        console.log("🤖 Bot trading seimbang 24/7 dijalankan (Interval 30s, Trade 3m).");
         
         if (botInterval) clearInterval(botInterval);
 
-        // Loop utama berjalan murni di server setiap 30 detik
         botInterval = setInterval(async () => {
             if (!isBotRunning) return;
             cycleCount++;
@@ -42,10 +40,10 @@ app.get('/api/start-bot', (req, res) => {
                 const btcPrice = marketData.bitcoin.usd;
                 const btcChange = marketData.bitcoin.usd_24h_change.toFixed(2);
 
-                // 2. Analisis AI dengan fokus prediksi 3 menit ke depan
-                const prompt = `Bertindaklah sebagai analis trading kripto profesional. Harga Bitcoin saat ini adalah $${btcPrice} dengan perubahan 24 jam sebesar ${btcChange}%. Analisis apakah dalam 3 menit ke depan harga Bitcoin cenderung akan NAIK (BUY), TURUN (SELL), atau STABIL/TIDAK PASTI (HOLD). Berikan keputusan dalam satu kata utama (BUY, SELL, atau HOLD) diikuti alasan singkat 1-2 kalimat.`;
+                // 2. Prompt AI Seimbang (Boleh HOLD, tapi dianjurkan aktif cari peluang)
+                const prompt = `Analisis harga Bitcoin saat ini: $${btcPrice} (Perubahan 24 jam: ${btcChange}%). Sebagai trader profesional, tentukan arah 3 menit ke depan. Utamakan memilih "BUY" atau "SELL" jika ada peluang fluktuasi, dan gunakan "HOLD" hanya jika pasar benar-benar datar/sangat berisiko. Jawab dengan format kata pertama: BUY, SELL, atau HOLD, diikuti alasan singkat 1 kalimat.`;
                 
-                let aiAnalysisText = "Analisis stabil terpantau.";
+                let aiAnalysisText = "Analisis pasar diproses...";
                 let actionDecision = "HOLD";
 
                 try {
@@ -56,18 +54,36 @@ app.get('/api/start-bot', (req, res) => {
                     if (aiResponse.text) {
                         aiAnalysisText = aiResponse.text;
                         const textUpper = aiResponse.text.toUpperCase();
-                        if (textUpper.includes("BUY")) actionDecision = "BUY";
-                        else if (textUpper.includes("SELL")) actionDecision = "SELL";
-                        else actionDecision = "HOLD";
+                        
+                        if (textUpper.includes("BUY") && !textUpper.includes("NO BUY")) {
+                            actionDecision = "BUY";
+                        } else if (textUpper.includes("SELL") && !textUpper.includes("NO SELL")) {
+                            actionDecision = "SELL";
+                        } else {
+                            actionDecision = "HOLD";
+                        }
                     }
                 } catch (e) {
-                    console.warn("AI fallback digunakan di server:", e.message);
+                    console.warn("AI fallback server:", e.message);
+                    actionDecision = btcChange >= 0 ? "BUY" : "SELL";
                 }
 
-                // 3. Kelola Active Trades & Timer Auto-Close di Server (berkurang 30 detik tiap siklus)
+                // Pengaman: Jika AI memilih HOLD 3 kali berturut-turut, paksa ambil keputusan BUY/SELL berdasarkan tren harian agar tidak terlalu banyak hold
+                if (actionDecision === "HOLD") {
+                    consecutiveHolds++;
+                    if (consecutiveHolds >= 3) {
+                        actionDecision = btcChange >= 0 ? "BUY" : "SELL";
+                        aiAnalysisText += ` (Dipaksa aktif karena terlalu banyak HOLD)`;
+                        consecutiveHolds = 0;
+                    }
+                } else {
+                    consecutiveHolds = 0; // Reset counter kalau AI milih BUY/SELL
+                }
+
+                // 3. Kelola Active Trades & Timer Auto-Close (Durasi 3 menit / 180 detik, berkurang 30 detik tiap loop)
                 for (let i = activeTrades.length - 1; i >= 0; i--) {
                     let trade = activeTrades[i];
-                    trade.timeLeft -= 30; // Berkurang 30 detik setiap loop
+                    trade.timeLeft -= 30; 
 
                     if (trade.timeLeft <= 0) {
                         let diff = (trade.type === "BUY") ? (btcPrice - trade.entryPrice) : (trade.entryPrice - btcPrice);
@@ -94,11 +110,11 @@ app.get('/api/start-bot', (req, res) => {
                     }
                 }
 
-                // 4. Eksekusi Buka Posisi Berdasarkan Keputusan AI (Durasi auto-close 3 menit = 180 detik)
+                // 4. Eksekusi Buka Posisi Jika Keputusan BUY atau SELL
                 const tradeAmount = 100;
-                const durationSeconds = 180; // 3 Menit
+                const durationSeconds = 180; // 3 Menit Auto-Close
 
-                if ((actionDecision === "BUY" || actionDecision === "SELL") && virtualBalance >= tradeAmount) {
+                if ((actionDecision === "BUY" || actionDecision === "SELL") && virtualBalance >= tradeAmount && activeTrades.length < 2) {
                     virtualBalance -= tradeAmount;
                     const newTrade = {
                         type: actionDecision,
@@ -120,7 +136,6 @@ app.get('/api/start-bot', (req, res) => {
                     if (tradeHistory.length > 25) tradeHistory.pop();
                 }
 
-                // Simpan state terbaru ke server log
                 serverLogs = {
                     price: btcPrice,
                     change: btcChange,
@@ -128,27 +143,25 @@ app.get('/api/start-bot', (req, res) => {
                     decision: actionDecision,
                     balance: virtualBalance,
                     tradeHistory: tradeHistory,
+                    activeTradesCount: activeTrades.length,
                     timestamp: new Date().toLocaleTimeString()
                 };
 
-                console.log(`[Server Loop #${cycleCount}] BTC: $${btcPrice} | Keputusan AI: ${actionDecision} | Saldo: $${virtualBalance.toFixed(2)}`);
+                console.log(`[Loop Seimbang #${cycleCount}] BTC: $${btcPrice} | Aksi: ${actionDecision} | Saldo: $${virtualBalance.toFixed(2)}`);
             } catch (error) {
-                console.error("Error pada loop server:", error.message);
+                console.error("Error loop server:", error.message);
             }
-        }, 30000); // 30 Detik per siklus
+        }, 30000); // 30 Detik
     }
-    res.json({ success: true, message: "Bot aktif di server dengan durasi 3 menit!" });
+    res.json({ success: true, message: "Bot seimbang aktif di server!" });
 });
 
-// Endpoint mematikan bot
 app.get('/api/stop-bot', (req, res) => {
     isBotRunning = false;
     if (botInterval) clearInterval(botInterval);
-    console.log("⏹ Bot server dihentikan.");
     res.json({ success: true, message: "Bot dihentikan." });
 });
 
-// Endpoint untuk ditarik oleh tampilan web (frontend)
 app.get('/api/bot-status', (req, res) => {
     res.json({
         running: isBotRunning,
@@ -159,3 +172,4 @@ app.get('/api/bot-status', (req, res) => {
 app.listen(port, () => {
     console.log(`Server berjalan di port ${port}`);
 });
+                    
