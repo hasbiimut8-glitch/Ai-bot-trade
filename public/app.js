@@ -74,19 +74,43 @@ const tradingChart = new Chart(ctx, {
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-document.getElementById('btn-run').addEventListener('click', () => {
+// Tombol Jalankan Bot (Menghubungkan ke Server Cloud Backend)
+document.getElementById('btn-run').addEventListener('click', async () => {
     if (isRunning) return;
-    isRunning = true;
     
-    document.getElementById('btn-run').classList.add('hidden');
-    document.getElementById('btn-stop').classList.remove('hidden');
-
-    runWorkflowCycle();
-    loopInterval = setInterval(runWorkflowCycle, 5000);
+    try {
+        const response = await fetch('/api/start-bot');
+        const data = await response.json();
+        if (data.success) {
+            isRunning = true;
+            document.getElementById('btn-run').classList.add('hidden');
+            document.getElementById('btn-stop').classList.remove('hidden');
+            document.getElementById('ai-status-text').innerText = "🤖 Bot aktif berjalan di Server Cloud 24/7!";
+            
+            // Mulai sinkronisasi status & data dari server setiap 5 detik
+            if (loopInterval) clearInterval(loopInterval);
+            loopInterval = setInterval(fetchServerStatus, 5000);
+            
+            // Langsung jalankan siklus lokal pertama
+            runWorkflowCycle();
+        }
+    } catch (e) {
+        console.error("Gagal menyalakan bot ke server:", e);
+        document.getElementById('ai-status-text').innerText = "⚠️ Gagal terhubung ke server.";
+    }
 });
 
-document.getElementById('btn-stop').addEventListener('click', () => {
-    stopWorkflow();
+// Tombol Berhentikan Bot
+document.getElementById('btn-stop').addEventListener('click', async () => {
+    try {
+        const response = await fetch('/api/stop-bot');
+        const data = await response.json();
+        if (data.success) {
+            stopWorkflow();
+        }
+    } catch (e) {
+        console.error("Gagal mematikan bot:", e);
+    }
 });
 
 function stopWorkflow() {
@@ -97,6 +121,28 @@ function stopWorkflow() {
     document.getElementById('ai-status-text').innerText = "Siklus dihentikan.";
     resetAllNodes();
     resetArrows();
+}
+
+// Sinkronisasi data real-time dari server backend
+async function fetchServerStatus() {
+    if (!isRunning) return;
+    try {
+        const res = await fetch('/api/bot-status');
+        const data = await res.json();
+        if (data.latestLog) {
+            const { price, change, analysis } = data.latestLog;
+            updateLiveChart(price);
+            updateActiveTrades(price);
+
+            document.getElementById('crypto-price').innerText = `$${price.toLocaleString()}`;
+            const changeEl = document.getElementById('crypto-change');
+            changeEl.innerText = `${change >= 0 ? '+' : ''}${change}%`;
+            changeEl.className = `text-[11px] font-semibold ${change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+            document.getElementById('ai-status-text').innerText = `💡 AI: ${analysis.slice(0, 45)}...`;
+        }
+    } catch (err) {
+        console.warn("Gagal sinkronisasi status dengan server.");
+    }
 }
 
 async function runWorkflowCycle() {
@@ -116,7 +162,7 @@ async function runWorkflowCycle() {
         const btcChange = marketData.bitcoin.usd_24h_change.toFixed(2);
 
         updateLiveChart(btcPrice);
-        updateActiveTrades(btcPrice); // Update timer & P/L posisi berjalan setiap detik/siklus
+        updateActiveTrades(btcPrice);
 
         document.getElementById('crypto-price').innerText = `$${btcPrice.toLocaleString()}`;
         const changeEl = document.getElementById('crypto-change');
@@ -180,11 +226,10 @@ async function runWorkflowCycle() {
         document.getElementById('ai-status-text').innerText = `💡 Sinyal: ${actionDecision} | AI: ${aiAnalysisText.slice(0, 30)}...`;
 
         const tradeAmount = 100; // Modal per transaksi otomatis ($100)
-        const durationSeconds = 15; // Durasi auto-close (misal 15 detik ala trade kilat)
+        const durationSeconds = 15; // Durasi auto-close
 
         if (actionDecision === "BUY" || actionDecision === "SELL") {
             if (virtualBalance >= tradeAmount) {
-                // Saldo langsung berkurang saat transaksi dibuka
                 virtualBalance -= tradeAmount;
                 updateBalanceDisplay();
 
@@ -219,7 +264,6 @@ async function runWorkflowCycle() {
         }
 
         localStorage.setItem('hisam_virtual_balance', virtualBalance);
-
         await sleep(900);
         deactivateNode(4, 'cyan');
 
@@ -235,25 +279,20 @@ function updateActiveTrades(currentBtcPrice) {
 
     for (let i = activeTrades.length - 1; i >= 0; i--) {
         let trade = activeTrades[i];
-        trade.timeLeft -= 5; // Berkurang 5 detik setiap siklus loop
+        trade.timeLeft -= 5;
 
         if (trade.timeLeft <= 0) {
-            // Posisi ditutup otomatis oleh timer (Auto-Close)
             let diff = (trade.type === "BUY") ? (currentBtcPrice - trade.entryPrice) : (trade.entryPrice - currentBtcPrice);
             let profitPercentage = (diff / trade.entryPrice) * 100 * 2; // Leverage 2x
             let pnlResult = (trade.amount * profitPercentage) / 100;
             
-            // Pengembalian modal + hasil profit/rugi
             let finalReturn = trade.amount + pnlResult;
-            if (finalReturn < 0) finalReturn = 0; // Batas minimal saldo kembali 0 (tidak minus)
+            if (finalReturn < 0) finalReturn = 0;
 
             virtualBalance += finalReturn;
             updateBalanceDisplay();
 
-            // Simpan ke riwayat transaksi tertutup
             saveTradeToHistory(`CLOSE (${trade.type})`, trade.entryPrice, currentBtcPrice, pnlResult);
-            
-            // Hapus dari daftar aktif
             activeTrades.splice(i, 1);
         }
     }
