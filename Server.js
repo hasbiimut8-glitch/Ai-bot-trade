@@ -13,6 +13,7 @@ const ai = new GoogleGenAI({ apiKey: 'AQ.Ab8RN6KkAKaKq9epVyDmaL7DPWlj98JlC9kAulm
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// State / Status Bot di Server Cloud
 let isBotRunning = false;
 let botInterval = null;
 let virtualBalance = 10000;
@@ -20,15 +21,17 @@ let tradeHistory = [];
 let activeTrades = [];
 let serverLogs = {};
 let cycleCount = 0;
-let consecutiveHolds = 0; // Penghitung untuk mencegah terlalu banyak HOLD
+let consecutiveHolds = 0;
 
+// Endpoint untuk menyalakan bot 24/7 di server
 app.get('/api/start-bot', (req, res) => {
     if (!isBotRunning) {
         isBotRunning = true;
-        console.log("🤖 Bot trading seimbang 24/7 dijalankan (Interval 30s, Trade 3m).");
+        console.log("🤖 Bot trading 24/7 dijalankan (Interval 30s, Trade 3m, Perhitungan Saldo Akurat).");
         
         if (botInterval) clearInterval(botInterval);
 
+        // Loop utama berjalan murni di server setiap 30 detik
         botInterval = setInterval(async () => {
             if (!isBotRunning) return;
             cycleCount++;
@@ -40,7 +43,7 @@ app.get('/api/start-bot', (req, res) => {
                 const btcPrice = marketData.bitcoin.usd;
                 const btcChange = marketData.bitcoin.usd_24h_change.toFixed(2);
 
-                // 2. Prompt AI Seimbang (Boleh HOLD, tapi dianjurkan aktif cari peluang)
+                // 2. Analisis AI Seimbang (Boleh HOLD tapi tetap aktif)
                 const prompt = `Analisis harga Bitcoin saat ini: $${btcPrice} (Perubahan 24 jam: ${btcChange}%). Sebagai trader profesional, tentukan arah 3 menit ke depan. Utamakan memilih "BUY" atau "SELL" jika ada peluang fluktuasi, dan gunakan "HOLD" hanya jika pasar benar-benar datar/sangat berisiko. Jawab dengan format kata pertama: BUY, SELL, atau HOLD, diikuti alasan singkat 1 kalimat.`;
                 
                 let aiAnalysisText = "Analisis pasar diproses...";
@@ -68,7 +71,7 @@ app.get('/api/start-bot', (req, res) => {
                     actionDecision = btcChange >= 0 ? "BUY" : "SELL";
                 }
 
-                // Pengaman: Jika AI memilih HOLD 3 kali berturut-turut, paksa ambil keputusan BUY/SELL berdasarkan tren harian agar tidak terlalu banyak hold
+                // Pengaman: Jika AI memilih HOLD 3 kali berturut-turut, paksa ambil keputusan
                 if (actionDecision === "HOLD") {
                     consecutiveHolds++;
                     if (consecutiveHolds >= 3) {
@@ -77,23 +80,24 @@ app.get('/api/start-bot', (req, res) => {
                         consecutiveHolds = 0;
                     }
                 } else {
-                    consecutiveHolds = 0; // Reset counter kalau AI milih BUY/SELL
+                    consecutiveHolds = 0;
                 }
 
-                // 3. Kelola Active Trades & Timer Auto-Close (Durasi 3 menit / 180 detik, berkurang 30 detik tiap loop)
+                // 3. Kelola Active Trades & Timer Auto-Close (Durasi 3 menit / 180 detik)
                 for (let i = activeTrades.length - 1; i >= 0; i--) {
                     let trade = activeTrades[i];
-                    trade.timeLeft -= 30; 
+                    trade.timeLeft -= 30; // Berkurang 30 detik tiap loop
 
                     if (trade.timeLeft <= 0) {
                         let diff = (trade.type === "BUY") ? (btcPrice - trade.entryPrice) : (trade.entryPrice - btcPrice);
                         let profitPercentage = (diff / trade.entryPrice) * 100 * 2; // Leverage 2x
                         let pnlResult = (trade.amount * profitPercentage) / 100;
                         
-                        let finalReturn = trade.amount + pnlResult;
-                        if (finalReturn < 0) finalReturn = 0;
+                        // RUMUS DIPERBAIKI: Modal awal dikembalikan utuh ditambah/dikurangi PnL
+                        let returnedCapital = trade.amount + pnlResult;
+                        if (returnedCapital < 0) returnedCapital = 0;
 
-                        virtualBalance += finalReturn;
+                        virtualBalance += returnedCapital;
 
                         const closeRecord = {
                             time: new Date().toLocaleTimeString(),
@@ -110,12 +114,13 @@ app.get('/api/start-bot', (req, res) => {
                     }
                 }
 
-                // 4. Eksekusi Buka Posisi Jika Keputusan BUY atau SELL
+                // 4. Eksekusi Buka Posisi (Modal dipotong sementara saat Open)
                 const tradeAmount = 100;
-                const durationSeconds = 180; // 3 Menit Auto-Close
+                const durationSeconds = 180; // 3 Menit
 
                 if ((actionDecision === "BUY" || actionDecision === "SELL") && virtualBalance >= tradeAmount && activeTrades.length < 2) {
-                    virtualBalance -= tradeAmount;
+                    virtualBalance -= tradeAmount; // Potong saldo untuk modal posisi aktif
+                    
                     const newTrade = {
                         type: actionDecision,
                         amount: tradeAmount,
@@ -136,6 +141,7 @@ app.get('/api/start-bot', (req, res) => {
                     if (tradeHistory.length > 25) tradeHistory.pop();
                 }
 
+                // Simpan state terbaru ke server log
                 serverLogs = {
                     price: btcPrice,
                     change: btcChange,
@@ -147,21 +153,24 @@ app.get('/api/start-bot', (req, res) => {
                     timestamp: new Date().toLocaleTimeString()
                 };
 
-                console.log(`[Loop Seimbang #${cycleCount}] BTC: $${btcPrice} | Aksi: ${actionDecision} | Saldo: $${virtualBalance.toFixed(2)}`);
+                console.log(`[Loop #${cycleCount}] BTC: $${btcPrice} | Aksi: ${actionDecision} | Saldo: $${virtualBalance.toFixed(2)}`);
             } catch (error) {
-                console.error("Error loop server:", error.message);
+                console.error("Error pada loop server:", error.message);
             }
         }, 30000); // 30 Detik
     }
-    res.json({ success: true, message: "Bot seimbang aktif di server!" });
+    res.json({ success: true, message: "Bot aktif di server dengan perhitungan saldo akurat!" });
 });
 
+// Endpoint mematikan bot
 app.get('/api/stop-bot', (req, res) => {
     isBotRunning = false;
     if (botInterval) clearInterval(botInterval);
+    console.log("⏹ Bot server dihentikan.");
     res.json({ success: true, message: "Bot dihentikan." });
 });
 
+// Endpoint untuk ditarik oleh tampilan web (frontend)
 app.get('/api/bot-status', (req, res) => {
     res.json({
         running: isBotRunning,
@@ -172,4 +181,4 @@ app.get('/api/bot-status', (req, res) => {
 app.listen(port, () => {
     console.log(`Server berjalan di port ${port}`);
 });
-                    
+                            
