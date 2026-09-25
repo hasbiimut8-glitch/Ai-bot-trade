@@ -13,6 +13,7 @@ const ai = new GoogleGenAI({ apiKey: 'AQ.Ab8RN6KkAKaKq9epVyDmaL7DPWlj98JlC9kAulm
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// State / Status Bot di Server Cloud
 let isBotRunning = false;
 let botInterval = null;
 let virtualBalance = 10000;
@@ -69,16 +70,17 @@ async function runBotCycle() {
             consecutiveHolds = 0;
         }
 
-        // Kelola Active Trades & Timer Auto-Close
+        // 3. Kelola Active Trades & Timer Auto-Close (Durasi 3 menit / 180 detik)
         for (let i = activeTrades.length - 1; i >= 0; i--) {
             let trade = activeTrades[i];
-            trade.timeLeft -= 30; 
+            trade.timeLeft -= 30; // Berkurang 30 detik tiap loop
 
             if (trade.timeLeft <= 0) {
                 let diff = (trade.type === "BUY") ? (btcPrice - trade.entryPrice) : (trade.entryPrice - btcPrice);
-                let profitPercentage = (diff / trade.entryPrice) * 100 * 2;
+                let profitPercentage = (diff / trade.entryPrice) * 100 * 2; // Leverage 2x
                 let pnlResult = (trade.amount * profitPercentage) / 100;
                 
+                // Modal awal dikembalikan utuh ditambah/dikurangi PnL
                 let returnedCapital = trade.amount + pnlResult;
                 if (returnedCapital < 0) returnedCapital = 0;
 
@@ -99,12 +101,12 @@ async function runBotCycle() {
             }
         }
 
-        // Eksekusi Buka Posisi
-        const tradeAmount = 100;
-        const durationSeconds = 180; 
+        // 4. Eksekusi Buka Posisi (DIKUNCI MAKSIMAL 1 POSISI, MODAL $1,000)
+        const tradeAmount = 1000; // Modal per trade diperbesar jadi $1,000
+        const durationSeconds = 180; // 3 Menit
 
-        if ((actionDecision === "BUY" || actionDecision === "SELL") && virtualBalance >= tradeAmount && activeTrades.length < 2) {
-            virtualBalance -= tradeAmount;
+        if ((actionDecision === "BUY" || actionDecision === "SELL") && virtualBalance >= tradeAmount && activeTrades.length < 1) {
+            virtualBalance -= tradeAmount; // Potong saldo $1,000 untuk posisi aktif
             
             const newTrade = {
                 type: actionDecision,
@@ -137,7 +139,7 @@ async function runBotCycle() {
             timestamp: new Date().toLocaleTimeString()
         };
 
-        console.log(`[Loop #${cycleCount}] BTC: $${btcPrice} | Aksi: ${actionDecision} | Saldo: $${virtualBalance.toFixed(2)}`);
+        console.log(`[Loop #${cycleCount}] BTC: $${btcPrice} | Aksi: ${actionDecision} | Saldo: $${virtualBalance.toFixed(2)} | Posisi Aktif: ${activeTrades.length}`);
     } catch (error) {
         console.error("Error pada loop server:", error.message);
     }
@@ -146,15 +148,14 @@ async function runBotCycle() {
 app.get('/api/start-bot', async (req, res) => {
     if (!isBotRunning) {
         isBotRunning = true;
-        console.log("🤖 Bot trading 24/7 dijalankan.");
+        console.log("🤖 Bot trading 24/7 dijalankan (Modal $1,000, Max 1 Posisi).");
         
-        // Eksekusi LANGSUNG saat tombol start diklik tanpa menunggu 30 detik pertama
         await runBotCycle();
 
         if (botInterval) clearInterval(botInterval);
         botInterval = setInterval(runBotCycle, 30000);
     }
-    res.json({ success: true, message: "Bot aktif!" });
+    res.json({ success: true, message: "Bot aktif dengan konfigurasi baru!" });
 });
 
 app.get('/api/stop-bot', (req, res) => {
@@ -174,4 +175,4 @@ app.get('/api/bot-status', (req, res) => {
 app.listen(port, () => {
     console.log(`Server berjalan di port ${port}`);
 });
-                
+            
