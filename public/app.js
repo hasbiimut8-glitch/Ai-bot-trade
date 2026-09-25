@@ -82,17 +82,29 @@ async function syncWithServer() {
             const { price, change, analysis, decision, balance, tradeHistory } = result.data;
             
             // 1. Jalankan animasi kotak n8n (Node 1 ke Node 4) agar visualnya hidup
-            triggerWorkflowNodesAnimation();
+            if (typeof triggerWorkflowNodesAnimation === 'function') {
+                triggerWorkflowNodesAnimation();
+            }
 
             // 2. Update UI Harga, Chart, & Status AI
-            updateLiveChart(price);
-            document.getElementById('crypto-price').innerText = `$${price.toLocaleString()}`;
-            const changeEl = document.getElementById('crypto-change');
-            changeEl.innerText = `${change >= 0 ? '+' : ''}${change}%`;
-            changeEl.className = `text-[11px] font-semibold ${change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+            if (price) {
+                updateLiveChart(price);
+                document.getElementById('crypto-price').innerText = `$${price.toLocaleString()}`;
+            }
+
+            if (change !== undefined) {
+                const changeEl = document.getElementById('crypto-change');
+                changeEl.innerText = `${change >= 0 ? '+' : ''}${change}%`;
+                changeEl.className = `text-[11px] font-semibold ${change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+            }
             
-            document.getElementById('virtual-pnl').innerText = `$${balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-            document.getElementById('ai-status-text').innerText = `💡 Sinyal: ${decision} | AI: ${analysis.slice(0, 35)}...`;
+            if (balance !== undefined) {
+                document.getElementById('virtual-pnl').innerText = `$${balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            }
+
+            if (analysis && decision) {
+                document.getElementById('ai-status-text').innerText = `💡 Sinyal: ${decision} | AI: ${analysis.slice(0, 35)}...`;
+            }
 
             // Update badge posisi BUY/SELL/HOLD
             updatePositionUI(decision);
@@ -104,6 +116,14 @@ async function syncWithServer() {
         console.warn("Gagal sinkronisasi data server.");
     }
 }
+
+// Fungsi untuk memperbarui tampilan status posisi
+function updatePositionUI(decision) {
+    // Fungsi aman untuk update status tanpa bikin error jika elemennya tidak ada
+    const statusBox = document.getElementById('ai-status-text');
+    if (!statusBox) return;
+}
+
 function renderHistoryTable(history) {
     const tbody = document.getElementById('history-table-body');
     if (!tbody) return;
@@ -153,7 +173,10 @@ function updateLiveChart(newPrice) {
 }
 
 // Tombol Hapus Riwayat
-document.getElementById('btn-clear-history').addEventListener('click', () => {
-    localStorage.clear();
-    location.reload();
-});
+const clearHistoryBtn = document.getElementById('btn-clear-history');
+if (clearHistoryBtn) {
+    clearHistoryBtn.addEventListener('click', () => {
+        localStorage.clear();
+        location.reload();
+    });
+}
