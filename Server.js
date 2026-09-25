@@ -18,14 +18,18 @@ let isBotRunning = false;
 let botInterval = null;
 let serverLogs = [];
 
-// Endpoint untuk menjalankan bot di server
+// Endpoint untuk menjalankan bot di server secara terus-menerus (24/7 Loop)
 app.get('/api/start-bot', (req, res) => {
     if (!isBotRunning) {
         isBotRunning = true;
         console.log("🤖 Bot trading otomatis diaktifkan di Server Cloud (24/7 Mode).");
         
+        // Bersihkan interval lama jika ada
+        if (botInterval) clearInterval(botInterval);
+
         // Loop otomatis setiap 5 detik di server backend
         botInterval = setInterval(async () => {
+            if (!isBotRunning) return;
             try {
                 const marketRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true');
                 const marketData = await marketRes.json();
@@ -35,7 +39,7 @@ app.get('/api/start-bot', (req, res) => {
                 const prompt = `Bertindaklah sebagai analis trading profesional. Harga Bitcoin saat ini adalah $${btcPrice} dengan perubahan 24 jam sebesar ${btcChange}%. Berikan analisis singkat apakah ini waktu yang bagus untuk Beli (Buy), Jual (Sell), atau Tunggu (Hold), beserta alasannya dalam 2-3 kalimat.`;
 
                 const aiResponse = await ai.models.generateContent({
-                    model: 'gemini-2.5-flash', // Menggunakan model yang stabil
+                    model: 'gemini-2.5-flash',
                     contents: prompt,
                 });
 
@@ -47,9 +51,9 @@ app.get('/api/start-bot', (req, res) => {
                 };
 
                 serverLogs.unshift(logEntry);
-                if (serverLogs.length > 20) serverLogs.pop(); // Batasi riwayat log server
+                if (serverLogs.length > 20) serverLogs.pop(); // Batasi riwayat log
 
-                console.log(`[Server Trade Loop] BTC: $${btcPrice} | Analisis AI Berhasil`);
+                console.log(`[Server Loop] BTC: $${btcPrice} | Sinyal AI Berhasil Diproses`);
             } catch (error) {
                 console.error("Error pada loop server:", error.message);
             }
@@ -61,12 +65,12 @@ app.get('/api/start-bot', (req, res) => {
 // Endpoint untuk menghentikan bot di server
 app.get('/api/stop-bot', (req, res) => {
     isBotRunning = false;
-    clearInterval(botInterval);
+    if (botInterval) clearInterval(botInterval);
     console.log("⏹ Bot trading server dihentikan.");
     res.json({ success: true, message: "Bot dihentikan." });
 });
 
-// Endpoint untuk mengambil data log/status terbaru dari server
+// Endpoint untuk mengambil data log/status terbaru dari server ke frontend
 app.get('/api/bot-status', (req, res) => {
     res.json({
         running: isBotRunning,
