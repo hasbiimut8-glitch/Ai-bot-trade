@@ -21,9 +21,8 @@ let tradeHistory = [];
 let activeTrades = [];
 let serverLogs = {};
 let cycleCount = 0;
-let consecutiveHolds = 0;
 
-// Fungsi inti untuk ambil data pasar & AI dengan Prompt Super Detail
+// Fungsi inti untuk ambil data pasar & AI dengan Strategi Lebih Agresif
 async function runBotCycle() {
     cycleCount++;
     try {
@@ -32,17 +31,17 @@ async function runBotCycle() {
         const btcPrice = marketData.bitcoin.usd;
         const btcChange = parseFloat(marketData.bitcoin.usd_24h_change.toFixed(2));
 
-        // PROMPT SUPER DETAIL & OBJEKTIF
+        // PROMPT AI LEBIH AGRESIF & SELEKTIF
         const prompt = `
-Analisis kondisi pasar Bitcoin saat ini secara ketat:
+Analisis kondisi pasar Bitcoin saat ini secara ketat untuk mencari peluang profit maksimal:
 - Harga BTC terkini: $${btcPrice}
 - Perubahan tren 24 Jam: ${btcChange}%
 
-Aturan Mutlak Analisis:
-1. Jika perubahan 24 jam bernilai POSITIF (> 0%), prioritaskan "BUY" atau "HOLD". DILARANG keras memilih "SELL" kecuali ada indikasi pembalikan arah yang sangat ekstrem.
-2. Jika perubahan 24 jam bernilai NEGATIF (< 0%), prioritaskan "SELL" atau "HOLD". DILARANG keras memilih "BUY" kecuali ada indikasi pantulan (*rebound*) yang kuat.
-3. Jika pasar bergerak datar atau ragu-ragu, WAJIB jawab "HOLD" agar tidak salah buka posisi.
-4. Jawab HANYA dengan format kata pertama: "BUY", "SELL", atau "HOLD", diikuti titik, lalu berikan alasan singkat maksimal 1 kalimat.
+Aturan Perdagangan Agresif:
+1. Jika perubahan 24 jam POSITIF (> 0%) dan grafik sedang naik, fokus cari momen "BUY".
+2. Jika perubahan 24 jam NEGATIF (< 0%) dan grafik sedang turun, fokus cari momen "SELL".
+3. Jangan ragu memilih "BUY" atau "SELL" jika tren terlihat jelas. Hanya jawab "HOLD" jika pasar benar-benar stagnan atau sangat berisiko.
+4. Jawab HANYA dengan format kata pertama: "BUY", "SELL", atau "HOLD", diikuti titik, lalu alasan singkat maksimal 1 kalimat.
 `;
         
         let aiAnalysisText = "Analisis pasar diproses...";
@@ -57,7 +56,6 @@ Aturan Mutlak Analisis:
                 aiAnalysisText = aiResponse.text;
                 const textUpper = aiResponse.text.toUpperCase();
                 
-                // Ekstraksi keputusan yang lebih ketat
                 if (textUpper.startsWith("BUY") || (textUpper.includes("BUY") && !textUpper.includes("NO BUY"))) {
                     actionDecision = "BUY";
                 } else if (textUpper.startsWith("SELL") || (textUpper.includes("SELL") && !textUpper.includes("NO SELL"))) {
@@ -68,11 +66,10 @@ Aturan Mutlak Analisis:
             }
         } catch (e) {
             console.warn("AI fallback server:", e.message);
-            // Fallback berdasarkan data real-time, bukan paksaan
             actionDecision = btcChange >= 0 ? "BUY" : "SELL";
         }
 
-        // Filter tambahan: Jika data CoinGecko hijau (positif) tapi AI bandel kasih SELL, override jadi HOLD atau BUY
+        // Lapisan Pengaman (Override Sistem) agar tidak salah arah ekstrem
         if (btcChange > 0 && actionDecision === "SELL") {
             actionDecision = "HOLD";
             aiAnalysisText += " [Override Sistem: Pasar Hijau, SELL ditolak]";
@@ -111,8 +108,8 @@ Aturan Mutlak Analisis:
             }
         }
 
-        // 4. Eksekusi Buka Posisi (Maksimal 1 Posisi, Modal $1,000)
-        const tradeAmount = 1000; 
+        // 4. Eksekusi Buka Posisi (Modal Dinaikkan ke $2,500 agar profit lebih terasa)
+        const tradeAmount = 2500; 
         const durationSeconds = 180; 
 
         if ((actionDecision === "BUY" || actionDecision === "SELL") && virtualBalance >= tradeAmount && activeTrades.length < 1) {
@@ -158,7 +155,7 @@ Aturan Mutlak Analisis:
 app.get('/api/start-bot', async (req, res) => {
     if (!isBotRunning) {
         isBotRunning = true;
-        console.log("🤖 Bot trading 24/7 dijalankan dengan Prompt Super Detail.");
+        console.log("🤖 Bot trading 24/7 dijalankan dengan Strategi Agresif ($2,500).");
         
         await runBotCycle();
 
@@ -185,4 +182,3 @@ app.get('/api/bot-status', (req, res) => {
 app.listen(port, () => {
     console.log(`Server berjalan di port ${port}`);
 });
-             
