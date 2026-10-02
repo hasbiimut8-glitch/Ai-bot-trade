@@ -12,10 +12,10 @@
         .glow-blue { box-shadow: 0 0 35px rgba(59, 130, 246, 0.3); }
         .glow-green { box-shadow: 0 0 20px rgba(16, 185, 129, 0.2); }
         @keyframes floatRobot {
-            0%, 100% { transform: translateY(0px) rotate(0deg); }
-            50% { transform: translateY(-4px) rotate(1deg); }
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-5px); }
         }
-        .robot-container { animation: floatRobot 4s infinite ease-in-out; }
+        .robot-3d-box { animation: floatRobot 4s infinite ease-in-out; }
     </style>
 </head>
 <body class="min-h-screen pb-28">
@@ -53,32 +53,55 @@
     <!-- Konten Utama -->
     <main class="max-w-md mx-auto p-4 space-y-4">
 
-        <!-- Banner Selamat Datang & Ilustrasi Robot Mirip Referensi -->
+        <!-- Banner Selamat Datang dengan Ilustrasi Robot 100% Persis Desain -->
         <div class="glass-card rounded-2xl p-5 relative overflow-hidden glow-blue border border-blue-500/20">
-            <!-- Background Glow Efek Neon -->
-            <div class="absolute -right-10 -top-10 w-44 h-44 bg-blue-600/20 rounded-full blur-3xl pointer-events-none"></div>
+            <!-- Background Glow Efek Cyberpunk -->
+            <div class="absolute right-0 top-0 w-40 h-40 bg-gradient-to-br from-blue-500/30 to-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
 
             <div class="flex justify-between items-center relative z-10">
-                <div class="w-7/12">
+                <div class="w-6/12">
                     <h2 class="text-xl font-bold text-white tracking-tight">Halo, Trader!</h2>
                     <p class="text-xs text-gray-400 mt-1 leading-relaxed">AI sedang menganalisis pasar dan mengeksekusi strategi terbaik untukmu.</p>
                 </div>
 
-                <!-- Ilustrasi Karakter Robot AI ala Referensi -->
-                <div class="w-28 h-24 rounded-2xl bg-gradient-to-br from-blue-900/40 via-indigo-950/60 to-gray-900 border border-blue-400/40 flex flex-col items-center justify-center relative robot-container shadow-2xl overflow-hidden p-2">
-                    <!-- Efek Cahaya Layar Hologram -->
-                    <div class="absolute inset-x-0 bottom-0 h-8 bg-blue-500/20 blur-sm"></div>
+                <!-- Ilustrasi Kepala Robot 3D AI High-Tech (Persis Desain Referensi) -->
+                <div class="w-32 h-28 rounded-2xl bg-gradient-to-b from-[#0e1628] to-[#070b14] border border-blue-500/40 flex items-center justify-center relative robot-3d-box shadow-2xl p-1">
+                    <!-- Efek Hologram Lingkaran Belakang -->
+                    <div class="absolute inset-2 border border-blue-500/20 rounded-xl pointer-events-none"></div>
+                    <div class="absolute w-20 h-20 bg-blue-500/15 rounded-full blur-xl"></div>
                     
-                    <!-- SVG Kepala/Badan Robot Futuristik dengan Mata Menyala -->
-                    <svg class="w-12 h-12 text-blue-400 drop-shadow-[0_0_8px_rgba(59,130,246,0.9)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 2a4 4 0 00-4 4v1H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-2V6a4 4 0 00-4-4z"></path>
-                        <!-- Mata Robot Bersinar Cyan/Biru -->
-                        <circle cx="9.5" cy="10" r="1.2" fill="#38bdf8"></circle>
-                        <circle cx="14.5" cy="10" r="1.2" fill="#38bdf8"></circle>
-                        <!-- Mulut / Indikator Data -->
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15h6" stroke="#38bdf8"></path>
+                    <!-- SVG Robot 3D Style Kustom -->
+                    <svg class="w-24 h-24 text-blue-400 relative z-10 drop-shadow-[0_0_12px_rgba(56,189,248,0.8)]" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <!-- Kuping/Antena Kiri Kanan -->
+                        <rect x="45" y="85" width="15" height="35" rx="5" fill="#1e293b" stroke="#38bdf8" stroke-width="3"/>
+                        <rect x="140" y="85" width="15" height="35" rx="5" fill="#1e293b" stroke="#38bdf8" stroke-width="3"/>
+                        
+                        <!-- Kepala Utama Robot (Rounded Futuristic Helmet) -->
+                        <rect x="55" y="55" width="90" height="90" rx="28" fill="url(#robotGrad)" stroke="#60a5fa" stroke-width="4"/>
+                        
+                        <!-- Panel Kaca/Visor Hitam Depan -->
+                        <rect x="68" y="72" width="64" height="48" rx="14" fill="#030712" stroke="#38bdf8" stroke-width="3"/>
+                        
+                        <!-- Mata Robot Mennyala Biru Terang (Gaya AI Cerdas) -->
+                        <circle cx="90" cy="96" r="8" fill="#38bdf8" />
+                        <circle cx="90" cy="96" r="3" fill="#ffffff" />
+                        <circle cx="110" cy="96" r="8" fill="#38bdf8" />
+                        <circle cx="110" cy="96" r="3" fill="#ffffff" />
+                        
+                        <!-- Garis Sensor di Tengah Visor -->
+                        <line x1="98" y1="96" x2="102" y2="96" stroke="#ffffff" stroke-width="2"/>
+
+                        <!-- Mulut / Indikator Audio Gelombang -->
+                        <path d="M85 125H115" stroke="#38bdf8" stroke-width="3" stroke-linecap="round"/>
+                        
+                        <!-- Gradien Warna Kepala -->
+                        <defs>
+                            <linearGradient id="robotGrad" x1="55" y1="55" x2="145" y2="145" gradientUnits="userSpaceOnUse">
+                                <stop stop-color="#1e293b"/>
+                                <stop offset="1" stop-color="#0f172a"/>
+                            </linearGradient>
+                        </defs>
                     </svg>
-                    <span class="text-[9px] font-bold text-blue-300 mt-1 tracking-wider uppercase bg-blue-500/20 px-1.5 py-0.5 rounded border border-blue-500/30">AI Active</span>
                 </div>
             </div>
 
