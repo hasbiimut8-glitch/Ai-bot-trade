@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Work Flow Hisam Agent Trading</title>
+    <title>Work Flow Hisam Forex Agent</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="style.css">
@@ -18,8 +18,8 @@
                 <span class="tracking-wider text-sm">n8n</span>
             </div>
             <div>
-                <h1 class="font-bold text-sm md:text-base text-white">Work Flow Hisam Agent Trading</h1>
-                <p class="text-[11px] text-gray-400">Simulasi Trading &bull; Bukan Saran Investasi</p>
+                <h1 class="font-bold text-sm md:text-base text-white">Work Flow Hisam Forex Agent</h1>
+                <p class="text-[11px] text-gray-400">Simulasi Trading EUR/USD &bull; Bukan Saran Investasi</p>
             </div>
         </div>
         <div class="flex items-center gap-2 bg-[#0b0f19] px-3 py-1.5 rounded-xl border border-gray-800">
@@ -39,8 +39,8 @@
                 <div class="flex items-center gap-2">
                     <span class="text-blue-400 text-lg">💾</span>
                     <div>
-                        <h3 class="font-bold text-white text-xs">Ambil data pasar</h3>
-                        <p class="text-[9px] text-gray-400">(API Market)</p>
+                        <h3 class="font-bold text-white text-xs">Ambil Kurs Forex</h3>
+                        <p class="text-[9px] text-gray-400">(Exchange API)</p>
                     </div>
                 </div>
             </div>
@@ -55,7 +55,7 @@
                     <span class="text-emerald-400 text-lg">🧠</span>
                     <div>
                         <h3 class="font-bold text-white text-xs">Analisis HisamAI</h3>
-                        <p class="text-[9px] text-gray-400">(AI Analysis)</p>
+                        <p class="text-[9px] text-gray-400">(Forex Strategy)</p>
                     </div>
                 </div>
             </div>
@@ -75,7 +75,7 @@
                 <span class="text-purple-400 text-xl">📈</span>
                 <div>
                     <h3 class="font-bold text-white text-xs">Render Grafik & UI</h3>
-                    <p class="text-[9px] text-gray-400">Visualisasi Real-time</p>
+                    <p class="text-[9px] text-gray-400">Visualisasi Kurs Real-time</p>
                 </div>
             </div>
 
@@ -86,7 +86,7 @@
                     <span class="text-cyan-400 text-lg">⚙️</span>
                     <div>
                         <h3 class="font-bold text-white text-xs">Keputusan Bot</h3>
-                        <p class="text-[9px] text-gray-400">(Strategy Logic)</p>
+                        <p class="text-[9px] text-gray-400">(Forex Execution)</p>
                     </div>
                 </div>
                 <div class="bg-[#0b0f19] p-1.5 rounded-lg border border-gray-800 text-center">
@@ -98,7 +98,7 @@
         <!-- Cabang Sinyal (Buy / Hold / Sell) -->
         <div class="grid grid-cols-3 gap-2 mb-6">
             <div id="card-buy" class="node-box border-l-4 border-emerald-500 p-2 text-center">
-                <div class="text-emerald-400 font-bold text-[11px] mb-1">⬆ BUY</div>
+                <div class="text-emerald-400 font-bold text-[11px] mb-1">⬆ BUY (LONG)</div>
                 <span id="badge-buy" class="text-[9px] font-semibold text-gray-500 bg-gray-900 px-2 py-0.5 rounded">Standby</span>
             </div>
             <div id="card-hold" class="node-box border-l-4 border-amber-500 p-2 text-center">
@@ -106,7 +106,7 @@
                 <span id="badge-hold" class="text-[9px] font-semibold text-gray-500 bg-gray-900 px-2 py-0.5 rounded">Standby</span>
             </div>
             <div id="card-sell" class="node-box border-l-4 border-rose-500 p-2 text-center">
-                <div class="text-rose-400 font-bold text-[11px] mb-1">⬇ SELL</div>
+                <div class="text-rose-400 font-bold text-[11px] mb-1">⬇ SELL (SHORT)</div>
                 <span id="badge-sell" class="text-[9px] font-semibold text-gray-500 bg-gray-900 px-2 py-0.5 rounded">Standby</span>
             </div>
         </div>
@@ -114,7 +114,7 @@
         <!-- Tombol Kontrol (Jalankan & Berhenti) -->
         <div class="flex gap-3 justify-center">
             <button id="btn-run" class="bg-gradient-to-r from-blue-600 to-emerald-600 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-lg active:scale-95 cursor-pointer flex-1 md:flex-none">
-                🚀 Jalankan Siklus Bot & AI
+                🚀 Jalankan Bot Forex & AI
             </button>
             <button id="btn-stop" class="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-lg active:scale-95 cursor-pointer hidden">
                 ⏹ Berhenti (Stop)
@@ -129,8 +129,8 @@
             <p class="text-sm font-bold text-white">$10,000.00</p>
         </div>
         <div class="bg-[#111827] border border-gray-800 p-3 rounded-2xl text-center shadow-lg">
-            <p class="text-[10px] text-gray-400">Total Profit / Loss (PnL)</p>
-            <p id="virtual-pnl" class="text-sm font-bold text-emerald-400">+$0.00 (0.00%)</p>
+            <p class="text-[10px] text-gray-400">Total Saldo / PnL</p>
+            <p id="virtual-pnl" class="text-sm font-bold text-emerald-400">+$0.00</p>
         </div>
         <div class="bg-[#111827] border border-gray-800 p-3 rounded-2xl text-center shadow-lg">
             <p class="text-[10px] text-gray-400">Status Posisi</p>
@@ -142,57 +142,57 @@
     <section class="bg-[#111827] border border-gray-800 rounded-2xl p-4 shadow-xl">
         <div class="flex justify-between items-center mb-3">
             <div class="flex items-center gap-2">
-                <div class="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-500 flex items-center justify-center font-bold text-xs">₿</div>
+                <div class="w-7 h-7 rounded-xl bg-blue-500/20 text-blue-500 flex items-center justify-center font-bold text-xs">💱</div>
                 <div>
-                    <h2 class="text-xs font-bold text-white">BTC/USDT <span class="text-[9px] text-gray-400 font-normal">Binance</span></h2>
+                    <h2 class="text-xs font-bold text-white">EUR/USD <span class="text-[9px] text-gray-400 font-normal">Forex Exchange</span></h2>
                     <p class="text-[9px] text-gray-400">Auto-Looping Bot Simulator</p>
                 </div>
             </div>
-            <div class="flex items-center gap-1.5 bg-red-500/10 px-2.5 py-0.5 rounded-full border border-red-500/20">
-                <span class="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
-                <span class="text-[10px] text-red-400 font-bold">Live</span>
+            <div class="flex items-center gap-1.5 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span class="text-[10px] text-emerald-400 font-bold">Live</span>
             </div>
         </div>
         <div class="flex items-baseline gap-2 mb-3">
             <div id="crypto-price" class="text-xl font-extrabold text-white">$Loading...</div>
-            <div id="crypto-change" class="text-[11px] font-semibold text-emerald-400">+0.00%</div>
+            <div id="crypto-change" class="text-[11px] font-semibold text-emerald-400">0.00%</div>
         </div>
         <div class="h-44 bg-[#0b0f19] p-2 rounded-xl border border-gray-800">
             <canvas id="tradingChart"></canvas>
         </div>
     </section>
-<!-- Panel Riwayat Transaksi (Trade History & PnL Log) -->
-<section class="bg-[#111827] border border-gray-800 rounded-2xl p-4 shadow-xl mb-6">
-    <div class="flex justify-between items-center mb-3">
-        <div>
-            <h2 class="text-xs font-bold text-white">Riwayat Transaksi Bot</h2>
-            <p class="text-[9px] text-gray-400">Catatan akumulasi profit & loss real-time</p>
+
+    <!-- Panel Riwayat Transaksi -->
+    <section class="bg-[#111827] border border-gray-800 rounded-2xl p-4 shadow-xl mb-6 mt-6">
+        <div class="flex justify-between items-center mb-3">
+            <div>
+                <h2 class="text-xs font-bold text-white">Riwayat Transaksi Forex Bot</h2>
+                <p class="text-[9px] text-gray-400">Catatan akumulasi profit & loss real-time</p>
+            </div>
+            <button id="btn-clear-history" class="text-[10px] text-rose-400 hover:text-rose-300 bg-rose-500/10 px-2.5 py-1 rounded-lg border border-rose-500/20 cursor-pointer">
+                Hapus Riwayat
+            </button>
         </div>
-        <button id="btn-clear-history" class="text-[10px] text-rose-400 hover:text-rose-300 bg-rose-500/10 px-2.5 py-1 rounded-lg border border-rose-500/20 cursor-pointer">
-            Hapus Riwayat
-        </button>
-    </div>
-    <div class="overflow-x-auto max-h-48 overflow-y-auto">
-        <table class="w-full text-left border-collapse text-[10px]">
-            <thead>
-                <tr class="border-b border-gray-800 text-gray-400">
-                    <th class="py-1.5 px-2">Waktu</th>
-                    <th class="py-1.5 px-2">Aksi</th>
-                    <th class="py-1.5 px-2">Harga Masuk</th>
-                    <th class="py-1.5 px-2">Profit/Loss (PnL)</th>
-                    <th class="py-1.5 px-2">Saldo Akhir</th>
-                </tr>
-            </thead>
-            <tbody id="history-table-body" class="divide-y divide-gray-800/50 text-gray-300">
-                <tr>
-                    <td colspan="5" class="py-3 text-center text-gray-500 italic">Belum ada riwayat transaksi.</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-</section>
+        <div class="overflow-x-auto max-h-48 overflow-y-auto">
+            <table class="w-full text-left border-collapse text-[10px]">
+                <thead>
+                    <tr class="border-b border-gray-800 text-gray-400">
+                        <th class="py-1.5 px-2">Waktu</th>
+                        <th class="py-1.5 px-2">Aksi</th>
+                        <th class="py-1.5 px-2">Harga Masuk</th>
+                        <th class="py-1.5 px-2">Profit/Loss (PnL)</th>
+                        <th class="py-1.5 px-2">Saldo Akhir</th>
+                    </tr>
+                </thead>
+                <tbody id="history-table-body" class="divide-y divide-gray-800/50 text-gray-300">
+                    <tr>
+                        <td colspan="5" class="py-3 text-center text-gray-500 italic">Belum ada riwayat transaksi.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
 
     <script src="app.js"></script>
 </body>
-                          </html>
-                          
+</html>
