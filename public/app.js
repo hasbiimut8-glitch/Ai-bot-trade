@@ -1,22 +1,22 @@
 let pollInterval = null;
 let isRunning = false;
 
-// Inisialisasi Chart.js
+// Inisialisasi Chart.js untuk Forex
 const ctx = document.getElementById('tradingChart').getContext('2d');
 const tradingChart = new Chart(ctx, {
     type: 'line',
     data: {
         labels: [],
         datasets: [{
-            label: 'BTC/USDT Price',
+            label: 'EUR/USD Rate',
             data: [],
-            borderColor: '#10b981',
-            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
             borderWidth: 2.5,
             fill: true,
             tension: 0.35,
             pointRadius: 2,
-            pointBackgroundColor: '#10b981'
+            pointBackgroundColor: '#3b82f6'
         }]
     },
     options: {
@@ -40,7 +40,7 @@ document.getElementById('btn-run').addEventListener('click', async () => {
             isRunning = true;
             document.getElementById('btn-run').classList.add('hidden');
             document.getElementById('btn-stop').classList.remove('hidden');
-            document.getElementById('ai-status-text').innerText = "🤖 Bot aktif di Server Cloud 24/7!";
+            document.getElementById('ai-status-text').innerText = "🤖 Bot Forex aktif di Server Cloud 24/7!";
             
             if (pollInterval) clearInterval(pollInterval);
             pollInterval = setInterval(syncWithServer, 5000);
@@ -72,7 +72,7 @@ function stopWorkflowUI() {
     document.getElementById('ai-status-text').innerText = "Siklus dihentikan.";
 }
 
-// Fungsi menarik data terbaru dari server backend sekaligus menyalakan animasi n8n
+// Fungsi sinkronisasi data server forex
 async function syncWithServer() {
     try {
         const res = await fetch('/api/bot-status');
@@ -81,15 +81,9 @@ async function syncWithServer() {
         if (result.running && result.data) {
             const { price, change, analysis, decision, balance, tradeHistory } = result.data;
             
-            // 1. Jalankan animasi kotak n8n (Node 1 ke Node 4) agar visualnya hidup
-            if (typeof triggerWorkflowNodesAnimation === 'function') {
-                triggerWorkflowNodesAnimation();
-            }
-
-            // 2. Update UI Harga, Chart, & Status AI
             if (price) {
-                updateLiveChart(price);
-                document.getElementById('crypto-price').innerText = `$${price.toLocaleString()}`;
+                updateLiveChart(parseFloat(price));
+                document.getElementById('crypto-price').innerText = `$${price}`;
             }
 
             if (change !== undefined) {
@@ -106,22 +100,11 @@ async function syncWithServer() {
                 document.getElementById('ai-status-text').innerText = `💡 Sinyal: ${decision} | AI: ${analysis.slice(0, 35)}...`;
             }
 
-            // Update badge posisi BUY/SELL/HOLD
-            updatePositionUI(decision);
-
-            // Update Tabel Riwayat
             renderHistoryTable(tradeHistory);
         }
     } catch (err) {
         console.warn("Gagal sinkronisasi data server.");
     }
-}
-
-// Fungsi untuk memperbarui tampilan status posisi
-function updatePositionUI(decision) {
-    // Fungsi aman untuk update status tanpa bikin error jika elemennya tidak ada
-    const statusBox = document.getElementById('ai-status-text');
-    if (!statusBox) return;
 }
 
 function renderHistoryTable(history) {
@@ -150,7 +133,7 @@ function renderHistoryTable(history) {
         tr.innerHTML = `
             <td class="py-2 px-2 text-gray-400">${item.time}</td>
             <td class="py-2 px-2 font-semibold ${item.type.includes('BUY') ? 'text-emerald-400' : item.type.includes('SELL') ? 'text-rose-400' : 'text-amber-400'}">${item.type}</td>
-            <td class="py-2 px-2">$${item.open.toLocaleString()}</td>
+            <td class="py-2 px-2">$${item.open}</td>
             <td class="py-2 px-2 ${pnlColor}">${pnlFormatted}</td>
             <td class="py-2 px-2 font-bold text-white">$${item.balanceAfter.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
         `;
