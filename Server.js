@@ -13,42 +13,56 @@ const ai = new GoogleGenAI({ apiKey: 'AQ.Ab8RN6KkAKaKq9epVyDmaL7DPWlj98JlC9kAulm
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// State / Status Bot Forex di Server Cloud
+// State / Status Bot Full-Autonomous
 let isBotRunning = false;
 let botInterval = null;
 let virtualBalance = 10000;
 let tradeHistory = [];
-let activeTrades = [];
+let activeTrade = null; // Fokus ke 1 posisi utama yang dikendalikan penuh oleh Gemini
 let serverLogs = {};
 let cycleCount = 0;
 
-// Fungsi inti untuk ambil data Forex & AI Gemini yang dioptimalkan
-async function runForexBotCycle() {
+async function runAutonomousForexBot() {
     cycleCount++;
     try {
-        // Mengambil kurs EUR/USD terbaru
+        // Ambil data kurs EUR/USD terbaru
         const forexRes = await fetch('https://api.exchangerate-api.com/v4/latest/EUR');
         const forexData = await forexRes.json();
         let eurUsdPrice = forexData.rates.USD;
         
-        // Menambahkan sedikit variasi volatilitas sintetis yang sehat agar chart dan PnL bergerak aktif
+        // Tambahkan volatilitas sintetis agar chart bergerak dinamis
         const marketNoise = (Math.sin(cycleCount * 1.5) * 0.0012) + ((Math.random() - 0.48) * 0.0008);
         eurUsdPrice += marketNoise;
-        
         const forexChange = (marketNoise * 100).toFixed(2);
 
-        // PROMPT AI FOREX
-        const prompt = `
-Analisis pasar Forex (EUR/USD) saat ini:
-- Harga Kurs: $${eurUsdPrice.toFixed(4)}
-- Tren Pendek: ${parseFloat(forexChange) >= 0 ? 'Bullish' : 'Bearish'}
+        // Hitung PnL posisi aktif saat ini (jika ada)
+        let currentPnl = 0;
+        let pnlPercentage = 0;
+        if (activeTrade) {
+            let priceDiff = (activeTrade.type === "BUY") ? (eurUsdPrice - activeTrade.entryPrice) : (activeTrade.entryPrice - eurUsdPrice);
+            pnlPercentage = (priceDiff / activeTrade.entryPrice) * 100 * 200; // Skala leverage virtual
+            currentPnl = (activeTrade.amount * pnlPercentage) / 100;
+        }
 
-Aturan:
-1. Tentukan "BUY", "SELL", atau "HOLD" secara tegas berdasarkan tren.
-2. Format jawaban: Kata pertama "BUY", "SELL", atau "HOLD", diikuti titik, lalu alasan 1 kalimat singkat.
+        // Ambil 3 riwayat transaksi terakhir sebagai "Memori Belajar" Gemini
+        const recentHistory = tradeHistory.slice(0, 3).map(h => `${h.type} di ${h.open}, hasil PnL: $${h.pnl ? h.pnl.toFixed(2) : 0}`).join(' | ') || "Belum ada riwayat.";
+
+        // PROMPT AI FULL AUTONOMOUS & AGRESIF
+        const prompt = `
+Kamu adalah AI Agent Autonomous Trader profesional di pasar Forex (EUR/USD).
+- Harga Kurs Saat Ini: $${eurUsdPrice.toFixed(4)}
+- Perubahan Tren: ${parseFloat(forexChange) >= 0 ? '+' : ''}${forexChange}%
+- Status Posisi Kamu Saat Ini: ${activeTrade ? `SEDANG MEMBUKA ${activeTrade.type} di harga $${activeTrade.entryPrice.toFixed(4)} (PnL sementara:$${currentPnl.toFixed(2)})` : 'TIDAK ADA POSISI (Bebas masuk)'}
+- Memori / Riwayat Evaluasi Terakhir: ${recentHistory}
+
+ATURAN UTAMA (WAJIB DITAati):
+1. Bersikaplah **AGRESIF**. Jangan terlalu banyak memilih HOLD kecuali pasar benar-benar stagnan total. Cari peluang cuan setiap ada pergerakan kecil.
+2. Jika KAMU TIDAK ADA POSISI, putuskan secara tegas: ketik "BUY" atau "SELL" di kata pertama untuk membuka posisi baru.
+3. Jika KAMU SEDANG ADA POSISI, evaluasi kinerjamu. Jika sudah untung atau jika tren berbalik merugikan berdasarkan memori evaluasi, kamu BEBAS memutuskan untuk mengetik "CLOSE" di kata pertama untuk menutup posisi, atau biarkan tetap jalan jika masih potensial.
+4. Format Jawaban: Kata pertama HARUS salah satu dari: "BUY", "SELL", atau "CLOSE", atau "HOLD", diikuti titik, lalu berikan alasan singkat analisismu.
 `;
-        
-        let aiAnalysisText = "Analisis pasar Forex diproses...";
+
+        let aiAnalysisText = "Analisis otonom diproses...";
         let actionDecision = "HOLD";
 
         try {
@@ -60,74 +74,51 @@ Aturan:
                 aiAnalysisText = aiResponse.text;
                 const textUpper = aiResponse.text.toUpperCase();
                 
-                if (textUpper.includes("BUY") && !textUpper.includes("NO BUY")) {
-                    actionDecision = "BUY";
-                } else if (textUpper.includes("SELL") && !textUpper.includes("NO SELL")) {
-                    actionDecision = "SELL";
-                } else {
-                    actionDecision = "HOLD";
-                }
+                if (textUpper.startsWith("BUY")) actionDecision = "BUY";
+                else if (textUpper.startsWith("SELL")) actionDecision = "SELL";
+                else if (textUpper.startsWith("CLOSE")) actionDecision = "CLOSE";
+                else actionDecision = "HOLD";
             }
         } catch (e) {
-            console.warn("AI fallback:", e.message);
-            actionDecision = parseFloat(forexChange) >= 0 ? "BUY" : "SELL";
+            console.warn("AI fallback error:", e.message);
+            actionDecision = activeTrade ? "CLOSE" : (parseFloat(forexChange) >= 0 ? "BUY" : "SELL");
         }
 
-        // Kelola Active Trades & Timer Auto-Close (Durasi 3 menit / 180 detik agar lebih dinamis)
-        for (let i = activeTrades.length - 1; i >= 0; i--) {
-            let trade = activeTrades[i];
-            trade.timeLeft -= 30; 
+        // EKSEKUSI KEPUTUSAN OTONOM GEMINI
+        const tradeAmount = 1000;
 
-            if (trade.timeLeft <= 0) {
-                // Perhitungan PnL Forex dengan scaling leverage virtual yang lebih terasa (misal 200x untuk magnifikasi pips)
-                let priceDiff = (trade.type === "BUY") ? (eurUsdPrice - trade.entryPrice) : (trade.entryPrice - eurUsdPrice);
-                let profitPercentage = (priceDiff / trade.entryPrice) * 100 * 200; 
-                let pnlResult = (trade.amount * profitPercentage) / 100;
-                
-                // Batasi max loss/win agar simulasi tetap realistis
-                if (pnlResult > 150) pnlResult = 120 + Math.random() * 30;
-                if (pnlResult < -150) pnlResult = -100 - Math.random() * 30;
+        // 1. Jika Gemini memutuskan CLOSE posisi aktif
+        if (actionDecision === "CLOSE" && activeTrade) {
+            virtualBalance += currentPnl;
+            if (virtualBalance < 0) virtualBalance = 0;
 
-                virtualBalance += pnlResult;
-                if (virtualBalance < 0) virtualBalance = 0;
-
-                const closeRecord = {
-                    time: new Date().toLocaleTimeString(),
-                    type: `CLOSE (${trade.type})`,
-                    open: trade.entryPrice.toFixed(4),
-                    close: eurUsdPrice.toFixed(4),
-                    pnl: pnlResult,
-                    balanceAfter: virtualBalance
-                };
-                tradeHistory.unshift(closeRecord);
-                if (tradeHistory.length > 25) tradeHistory.pop();
-
-                activeTrades.splice(i, 1);
-            }
-        }
-
-        // Eksekusi Buka Posisi (Modal $1,000 per posisi, durasi 180 detik)
-        const tradeAmount = 1000; 
-        const durationSeconds = 180; 
-
-        if ((actionDecision === "BUY" || actionDecision === "SELL") && virtualBalance >= tradeAmount && activeTrades.length < 2) {
-            const newTrade = {
+            tradeHistory.unshift({
+                time: new Date().toLocaleTimeString(),
+                type: `CLOSE (${activeTrade.type})`,
+                open: activeTrade.entryPrice.toFixed(4),
+                close: eurUsdPrice.toFixed(4),
+                pnl: currentPnl,
+                balanceAfter: virtualBalance
+            });
+            if (tradeHistory.length > 25) tradeHistory.pop();
+            activeTrade = null;
+        } 
+        // 2. Jika Gemini memutuskan BUKA POSISI BARU (BUY / SELL) dan belum ada posisi aktif
+        else if ((actionDecision === "BUY" || actionDecision === "SELL") && !activeTrade && virtualBalance >= tradeAmount) {
+            activeTrade = {
                 type: actionDecision,
                 amount: tradeAmount,
-                entryPrice: eurUsdPrice,
-                timeLeft: durationSeconds
+                entryPrice: eurUsdPrice
             };
-            activeTrades.push(newTrade);
 
-            const openRecord = {
+            tradeHistory.unshift({
                 time: new Date().toLocaleTimeString(),
                 type: `OPEN ${actionDecision}`,
                 open: eurUsdPrice.toFixed(4),
                 close: eurUsdPrice.toFixed(4),
                 pnl: 0,
                 balanceAfter: virtualBalance
-            };
-            tradeHistory.unshift(openRecord);
+            });
             if (tradeHistory.length > 25) tradeHistory.pop();
         }
 
@@ -137,32 +128,33 @@ Aturan:
             analysis: aiAnalysisText,
             decision: actionDecision,
             balance: virtualBalance,
+            activeTrade: activeTrade,
+            currentPnl: currentPnl,
             tradeHistory: tradeHistory,
-            activeTradesCount: activeTrades.length,
             timestamp: new Date().toLocaleTimeString()
         };
 
-        console.log(`[Forex Loop #${cycleCount}] EUR/USD: $${eurUsdPrice.toFixed(4)} | Aksi: ${actionDecision} | Saldo: $${virtualBalance.toFixed(2)}`);
+        console.log(`[Autonomous Bot] Harga: $${eurUsdPrice.toFixed(4)} | Keputusan AI: ${actionDecision} | PnL: $${currentPnl.toFixed(2)}`);
     } catch (error) {
-        console.error("Error pada loop server forex:", error.message);
+        console.error("Error autonomous loop:", error.message);
     }
 }
 
 app.get('/api/start-bot', async (req, res) => {
     if (!isBotRunning) {
         isBotRunning = true;
-        console.log("🤖 Bot Forex EUR/USD Diaktifkan.");
-        await runForexBotCycle();
+        console.log("🤖 Bot Full-Autonomous Diaktifkan.");
+        await runAutonomousForexBot();
         if (botInterval) clearInterval(botInterval);
-        botInterval = setInterval(runForexBotCycle, 30000);
+        botInterval = setInterval(runAutonomousForexBot, 25000); // Cek tiap 25 detik agar responsif
     }
-    res.json({ success: true, message: "Bot Forex aktif!" });
+    res.json({ success: true, message: "Bot Autonomous aktif!" });
 });
 
 app.get('/api/stop-bot', (req, res) => {
     isBotRunning = false;
     if (botInterval) clearInterval(botInterval);
-    console.log("⏹ Bot Forex dihentikan.");
+    console.log("⏹ Bot dihentikan.");
     res.json({ success: true, message: "Bot dihentikan." });
 });
 
@@ -174,5 +166,5 @@ app.get('/api/bot-status', (req, res) => {
 });
 
 app.listen(port, () => {
-    console.log(`Server Forex berjalan di port ${port}`);
+    console.log(`Server Autonomous Forex berjalan di port ${port}`);
 });
