@@ -11,11 +11,30 @@
         .glass-card { background: rgba(17, 24, 39, 0.75); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.08); }
         .glow-blue { box-shadow: 0 0 35px rgba(59, 130, 246, 0.3); }
         .glow-green { box-shadow: 0 0 20px rgba(16, 185, 129, 0.2); }
-        @keyframes floatRobot {
-            0%, 100% { transform: translateY(0px); }
-            50% { transform: translateY(-5px); }
+        
+        /* Animasi Robot Trading Asli */
+        @keyframes robotFloat {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-6px) rotate(1deg); }
         }
-        .robot-3d-box { animation: floatRobot 4s infinite ease-in-out; }
+        @keyframes eyeLaser {
+            0%, 100% { opacity: 1; filter: drop-shadow(0 0 8px #38bdf8); }
+            50% { opacity: 0.4; filter: drop-shadow(0 0 2px #38bdf8); }
+        }
+        @keyframes chartPulse {
+            0% { transform: scaleY(0.8); opacity: 0.6; }
+            50% { transform: scaleY(1.2); opacity: 1; }
+            100% { transform: scaleY(0.8); opacity: 0.6; }
+        }
+        @keyframes dataScan {
+            0% { transform: translateY(-20px); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: translateY(20px); opacity: 0; }
+        }
+
+        .robot-animated { animation: robotFloat 3.5s infinite ease-in-out; }
+        .robot-eye { animation: eyeLaser 1.5s infinite ease-in-out; }
+        .scan-line { animation: dataScan 2s infinite linear; }
     </style>
 </head>
 <body class="min-h-screen pb-28">
@@ -53,52 +72,67 @@
     <!-- Konten Utama -->
     <main class="max-w-md mx-auto p-4 space-y-4">
 
-        <!-- Banner Selamat Datang dengan Ilustrasi Robot 100% Persis Desain -->
+        <!-- Banner Selamat Datang dengan Ilustrasi Robot 3D Animasi Trading Asli -->
         <div class="glass-card rounded-2xl p-5 relative overflow-hidden glow-blue border border-blue-500/20">
             <!-- Background Glow Efek Cyberpunk -->
             <div class="absolute right-0 top-0 w-40 h-40 bg-gradient-to-br from-blue-500/30 to-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
 
             <div class="flex justify-between items-center relative z-10">
-                <div class="w-6/12">
-                    <h2 class="text-xl font-bold text-white tracking-tight">Halo, Trader!</h2>
-                    <p class="text-xs text-gray-400 mt-1 leading-relaxed">AI sedang menganalisis pasar dan mengeksekusi strategi terbaik untukmu.</p>
+                <div class="w-5/12">
+                    <h2 class="text-xl font-bold text-white tracking-tight">Halo, Hisam!</h2>
+                    <p class="text-xs text-gray-400 mt-1 leading-relaxed">Robot AI sedang memindai chart & mengambil posisi profit otomatis.</p>
                 </div>
 
-                <!-- Ilustrasi Kepala Robot 3D AI High-Tech (Persis Desain Referensi) -->
-                <div class="w-32 h-28 rounded-2xl bg-gradient-to-b from-[#0e1628] to-[#070b14] border border-blue-500/40 flex items-center justify-center relative robot-3d-box shadow-2xl p-1">
-                    <!-- Efek Hologram Lingkaran Belakang -->
-                    <div class="absolute inset-2 border border-blue-500/20 rounded-xl pointer-events-none"></div>
-                    <div class="absolute w-20 h-20 bg-blue-500/15 rounded-full blur-xl"></div>
+                <!-- Robot 3D Karakter Persis Desain Beranimasi Trading -->
+                <div class="w-36 h-32 rounded-2xl bg-gradient-to-b from-[#0e1628] to-[#050811] border border-blue-500/40 flex items-center justify-center relative robot-animated shadow-2xl p-1">
+                    <!-- Lingkaran Hologram Background -->
+                    <div class="absolute inset-1.5 border border-dashed border-blue-500/30 rounded-xl pointer-events-none"></div>
+                    <div class="absolute w-24 h-24 bg-blue-500/15 rounded-full blur-xl"></div>
                     
-                    <!-- SVG Robot 3D Style Kustom -->
-                    <svg class="w-24 h-24 text-blue-400 relative z-10 drop-shadow-[0_0_12px_rgba(56,189,248,0.8)]" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <!-- Kuping/Antena Kiri Kanan -->
-                        <rect x="45" y="85" width="15" height="35" rx="5" fill="#1e293b" stroke="#38bdf8" stroke-width="3"/>
-                        <rect x="140" y="85" width="15" height="35" rx="5" fill="#1e293b" stroke="#38bdf8" stroke-width="3"/>
-                        
-                        <!-- Kepala Utama Robot (Rounded Futuristic Helmet) -->
-                        <rect x="55" y="55" width="90" height="90" rx="28" fill="url(#robotGrad)" stroke="#60a5fa" stroke-width="4"/>
-                        
-                        <!-- Panel Kaca/Visor Hitam Depan -->
-                        <rect x="68" y="72" width="64" height="48" rx="14" fill="#030712" stroke="#38bdf8" stroke-width="3"/>
-                        
-                        <!-- Mata Robot Mennyala Biru Terang (Gaya AI Cerdas) -->
-                        <circle cx="90" cy="96" r="8" fill="#38bdf8" />
-                        <circle cx="90" cy="96" r="3" fill="#ffffff" />
-                        <circle cx="110" cy="96" r="8" fill="#38bdf8" />
-                        <circle cx="110" cy="96" r="3" fill="#ffffff" />
-                        
-                        <!-- Garis Sensor di Tengah Visor -->
-                        <line x1="98" y1="96" x2="102" y2="96" stroke="#ffffff" stroke-width="2"/>
+                    <!-- SVG Ilustrasi Robot Persis Desain Asli -->
+                    <svg class="w-28 h-28 relative z-10" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <!-- Antena Atas Robot Berdenyut -->
+                        <line x1="100" y1="50" x2="100" y2="28" stroke="#38bdf8" stroke-width="4" stroke-linecap="round"/>
+                        <circle cx="100" cy="22" r="6" fill="#38bdf8" class="robot-eye"/>
 
-                        <!-- Mulut / Indikator Audio Gelombang -->
-                        <path d="M85 125H115" stroke="#38bdf8" stroke-width="3" stroke-linecap="round"/>
+                        <!-- Telinga / Sisi Helm Kiri Kanan -->
+                        <rect x="42" y="80" width="16" height="40" rx="6" fill="#1e293b" stroke="#38bdf8" stroke-width="3"/>
+                        <rect x="142" y="80" width="16" height="40" rx="6" fill="#1e293b" stroke="#38bdf8" stroke-width="3"/>
+                        <circle cx="50" cy="100" r="3" fill="#60a5fa"/>
+                        <circle cx="150" cy="100" r="3" fill="#60a5fa"/>
+
+                        <!-- Kepala Utama Robot (Helm Futuristik) -->
+                        <rect x="52" y="48" width="96" height="96" rx="30" fill="url(#robotBodyGrad)" stroke="#60a5fa" stroke-width="4"/>
                         
-                        <!-- Gradien Warna Kepala -->
+                        <!-- Panel Visor Layar Depan Hitam -->
+                        <rect x="65" y="66" width="70" height="52" rx="14" fill="#020617" stroke="#38bdf8" stroke-width="3"/>
+                        
+                        <!-- Garis Efek Scanner Data Bergerak di Visor -->
+                        <line x1="72" y1="92" x2="128" y2="92" stroke="#38bdf8" stroke-width="1.5" stroke-opacity="0.4" class="scan-line"/>
+
+                        <!-- Mata AI Biru Menyala Bersinar (Animasi Berkedip) -->
+                        <g class="robot-eye">
+                            <circle cx="88" cy="92" r="9" fill="#38bdf8"/>
+                            <circle cx="88" cy="92" r="4" fill="#ffffff"/>
+                            <circle cx="112" cy="92" r="9" fill="#38bdf8"/>
+                            <circle cx="112" cy="92" r="4" fill="#ffffff"/>
+                        </g>
+
+                        <!-- Indikator Mulut / Gelombang Audio Trading -->
+                        <path d="M82 122H118" stroke="#38bdf8" stroke-width="3.5" stroke-linecap="round"/>
+                        <path d="M92 130H108" stroke="#60a5fa" stroke-width="2.5" stroke-linecap="round"/>
+
+                        <!-- Lengan Mini Robot di Bawah Helm (Simulasi Sedang Mengetik/Trading) -->
+                        <path d="M60 144L45 170" stroke="#38bdf8" stroke-width="5" stroke-linecap="round"/>
+                        <path d="M140 144L155 170" stroke="#38bdf8" stroke-width="5" stroke-linecap="round"/>
+                        <circle cx="43" cy="173" r="5" fill="#60a5fa"/>
+                        <circle cx="157" cy="173" r="5" fill="#60a5fa"/>
+
+                        <!-- Gradien Warna Kepala Robot -->
                         <defs>
-                            <linearGradient id="robotGrad" x1="55" y1="55" x2="145" y2="145" gradientUnits="userSpaceOnUse">
+                            <linearGradient id="robotBodyGrad" x1="52" y1="48" x2="148" y2="144" gradientUnits="userSpaceOnUse">
                                 <stop stop-color="#1e293b"/>
-                                <stop offset="1" stop-color="#0f172a"/>
+                                <stop offset="1" stop-color="#090d16"/>
                             </linearGradient>
                         </defs>
                     </svg>
