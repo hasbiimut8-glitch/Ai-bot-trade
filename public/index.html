@@ -9,13 +9,13 @@
     <style>
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #07090e; color: #f3f4f6; }
         .glass-card { background: rgba(17, 24, 39, 0.75); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.08); }
-        .glow-blue { box-shadow: 0 0 30px rgba(59, 130, 246, 0.25); }
+        .glow-blue { box-shadow: 0 0 35px rgba(59, 130, 246, 0.3); }
         .glow-green { box-shadow: 0 0 20px rgba(16, 185, 129, 0.2); }
-        @keyframes pulse-slow {
-            0%, 100% { opacity: 0.8; transform: scale(1); }
-            50% { opacity: 1; transform: scale(1.03); }
+        @keyframes floatRobot {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-4px) rotate(1deg); }
         }
-        .robot-glow { animation: pulse-slow 3s infinite ease-in-out; }
+        .robot-container { animation: floatRobot 4s infinite ease-in-out; }
     </style>
 </head>
 <body class="min-h-screen pb-28">
@@ -36,42 +36,49 @@
         </div>
 
         <div class="flex items-center space-x-3">
-            <!-- Badge Status Bot Aktif -->
             <div id="botBadge" class="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-400 border border-emerald-700/50 flex items-center space-x-1.5 glow-green">
                 <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                 <span id="botStatusText">Bot Aktif</span>
             </div>
-            <!-- Ikon Notifikasi -->
             <button class="w-9 h-9 rounded-xl glass-card flex items-center justify-center text-gray-300 relative hover:text-white transition">
                 <span class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
             </button>
-            <!-- Ikon Menu -->
             <button class="w-9 h-9 rounded-xl glass-card flex items-center justify-center text-gray-300 hover:text-white transition">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
             </button>
         </div>
     </header>
 
-    <!-- Konten Utama (Beranda) -->
+    <!-- Konten Utama -->
     <main class="max-w-md mx-auto p-4 space-y-4">
 
-        <!-- Banner Selamat Datang & Ilustrasi Robot AI (Mirip Referensi) -->
+        <!-- Banner Selamat Datang & Ilustrasi Robot Mirip Referensi -->
         <div class="glass-card rounded-2xl p-5 relative overflow-hidden glow-blue border border-blue-500/20">
+            <!-- Background Glow Efek Neon -->
+            <div class="absolute -right-10 -top-10 w-44 h-44 bg-blue-600/20 rounded-full blur-3xl pointer-events-none"></div>
+
             <div class="flex justify-between items-center relative z-10">
                 <div class="w-7/12">
                     <h2 class="text-xl font-bold text-white tracking-tight">Halo, Trader!</h2>
                     <p class="text-xs text-gray-400 mt-1 leading-relaxed">AI sedang menganalisis pasar dan mengeksekusi strategi terbaik untukmu.</p>
                 </div>
-                <!-- Ilustrasi Robot AI Keren Bergaya Neon -->
-                <div class="w-24 h-24 rounded-2xl bg-gradient-to-tr from-blue-600/30 to-indigo-600/30 border border-blue-400/30 flex items-center justify-center relative robot-glow shadow-inner">
-                    <div class="absolute inset-0 bg-blue-500/10 rounded-2xl blur-md"></div>
-                    <!-- Ikon Robot SVG Futuristik -->
-                    <svg class="w-14 h-14 text-blue-400 relative z-10 drop-shadow-[0_0_10px_rgba(59,130,246,0.6)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
-                        <circle cx="9" cy="9" r="1.5" fill="currentColor"></circle>
-                        <circle cx="15" cy="9" r="1.5" fill="currentColor"></circle>
+
+                <!-- Ilustrasi Karakter Robot AI ala Referensi -->
+                <div class="w-28 h-24 rounded-2xl bg-gradient-to-br from-blue-900/40 via-indigo-950/60 to-gray-900 border border-blue-400/40 flex flex-col items-center justify-center relative robot-container shadow-2xl overflow-hidden p-2">
+                    <!-- Efek Cahaya Layar Hologram -->
+                    <div class="absolute inset-x-0 bottom-0 h-8 bg-blue-500/20 blur-sm"></div>
+                    
+                    <!-- SVG Kepala/Badan Robot Futuristik dengan Mata Menyala -->
+                    <svg class="w-12 h-12 text-blue-400 drop-shadow-[0_0_8px_rgba(59,130,246,0.9)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 2a4 4 0 00-4 4v1H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-2V6a4 4 0 00-4-4z"></path>
+                        <!-- Mata Robot Bersinar Cyan/Biru -->
+                        <circle cx="9.5" cy="10" r="1.2" fill="#38bdf8"></circle>
+                        <circle cx="14.5" cy="10" r="1.2" fill="#38bdf8"></circle>
+                        <!-- Mulut / Indikator Data -->
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15h6" stroke="#38bdf8"></path>
                     </svg>
+                    <span class="text-[9px] font-bold text-blue-300 mt-1 tracking-wider uppercase bg-blue-500/20 px-1.5 py-0.5 rounded border border-blue-500/30">AI Active</span>
                 </div>
             </div>
 
@@ -85,7 +92,7 @@
                     </div>
                 </div>
                 <div>
-                    <button id="toggleBtn" onclick="toggleBot()" class="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-blue-600/30">
+                    <button id="toggleBtn" onclick="toggleBot()" class="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-blue-600/35">
                         Mulai Bot
                     </button>
                 </div>
@@ -121,7 +128,7 @@
                 <button class="flex-1 py-1 text-[11px] font-semibold text-gray-400 hover:text-white rounded-lg transition">1d</button>
             </div>
 
-            <!-- Grafik Live Bergerak Naik Turun (Interactive SVG Chart) -->
+            <!-- Grafik Live Bergerak Naik Turun -->
             <div class="h-32 w-full bg-gray-900/70 rounded-xl border border-gray-800/80 p-2 flex flex-col justify-between relative overflow-hidden">
                 <div class="absolute inset-0 bg-gradient-to-t from-blue-500/10 via-transparent to-transparent pointer-events-none"></div>
                 <div class="flex justify-between text-[10px] text-gray-500 z-10">
@@ -131,7 +138,6 @@
                     <span>20:00</span>
                     <span>00:00</span>
                 </div>
-                <!-- Jalur Grafik SVG yang Berubah Dinamis Live -->
                 <div class="w-full h-16 flex items-center z-10">
                     <svg class="w-full h-full overflow-visible" viewBox="0 0 300 60" preserveAspectRatio="none">
                         <defs>
@@ -140,9 +146,7 @@
                                 <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
                             </linearGradient>
                         </defs>
-                        <!-- Area bawah garis -->
                         <path id="chartArea" d="M0,50 Q50,40 100,45 T200,25 T300,15 L300,60 L0,60 Z" fill="url(#chartGrad)"></path>
-                        <!-- Garis utama grafik -->
                         <path id="chartLine" d="M0,50 Q50,40 100,45 T200,25 T300,15" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round"></path>
                     </svg>
                 </div>
@@ -152,7 +156,7 @@
                 </div>
             </div>
 
-            <!-- Kotak Pikiran / Analisis AI Live -->
+            <!-- Kotak Pikiran AI Live -->
             <div class="bg-gray-900/90 rounded-xl p-3 border border-blue-500/20 mt-3">
                 <div class="flex items-center justify-between mb-1">
                     <span class="text-[10px] uppercase tracking-wider text-blue-400 font-bold flex items-center space-x-1">
@@ -201,7 +205,7 @@
             </div>
         </div>
 
-        <!-- Aktivitas Bot (Riwayat Transaksi) -->
+        <!-- Aktivitas Bot -->
         <div class="glass-card rounded-2xl p-4">
             <div class="flex justify-between items-center mb-3">
                 <h3 class="font-bold text-sm text-white flex items-center space-x-1.5">
@@ -247,7 +251,6 @@
         let isRunning = false;
         let startTime = null;
 
-        // Fungsi Animasi Grafik Live Naik Turun secara Dinamis
         function updateLiveChart(currentPrice) {
             const seed = parseFloat(currentPrice) || 1.0850;
             const p1 = (seed + (Math.sin(Date.now() / 1000) * 0.002)).toFixed(4);
@@ -255,7 +258,6 @@
             const p3 = (seed + (Math.sin(Date.now() / 1200) * 0.0015)).toFixed(4);
             const p4 = seed.toFixed(4);
 
-            // Ubah koordinat jalur SVG secara live
             const y1 = 45 - ((p1 - seed) * 3000);
             const y2 = 30 - ((p2 - seed) * 3000);
             const y3 = 20 - ((p3 - seed) * 3000);
@@ -271,7 +273,6 @@
                 areaElem.setAttribute('d', areaD);
             }
 
-            // Update label min/max tipis di bawah chart
             document.getElementById('chartMin').innerText = `Min: ${(seed - 0.0035).toFixed(4)}`;
             document.getElementById('chartMax').innerText = `Max: ${(seed + 0.0035).toFixed(4)}`;
         }
@@ -315,8 +316,6 @@
             if (data) {
                 const currentPriceStr = data.price || '1.0850';
                 document.getElementById('marketPrice').innerText = `$${currentPriceStr}`;
-                
-                // Panggil fungsi chart live
                 updateLiveChart(currentPriceStr);
 
                 const changeElem = document.getElementById('marketChange');
@@ -391,7 +390,6 @@
             }
         }
 
-        // Jalankan pergerakan chart live setiap 1.5 detik
         setInterval(() => {
             const currentVal = document.getElementById('marketPrice').innerText.replace('$', '');
             updateLiveChart(currentVal);
