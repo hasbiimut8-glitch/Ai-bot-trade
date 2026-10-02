@@ -22,31 +22,30 @@ let activeTrades = [];
 let serverLogs = {};
 let cycleCount = 0;
 
-// Fungsi inti untuk ambil data Forex & AI Gemini
+// Fungsi inti untuk ambil data Forex & AI Gemini yang dioptimalkan
 async function runForexBotCycle() {
     cycleCount++;
     try {
-        // Menggunakan API publik gratis untuk kurs mata uang (EUR ke USD)
+        // Mengambil kurs EUR/USD terbaru
         const forexRes = await fetch('https://api.exchangerate-api.com/v4/latest/EUR');
         const forexData = await forexRes.json();
-        const eurUsdPrice = forexData.rates.USD;
+        let eurUsdPrice = forexData.rates.USD;
         
-        // Simulasi perubahan harian persentase (karena endpoint bebas, kita buat variasi tren berdasarkan digit terakhir atau random stabil)
-        // Atau kita pakai logika analisis AI murni berdasarkan harga saat ini
-        const randomChange = (Math.sin(cycleCount) * 0.15).toFixed(2); // Variasi kecil realistis ala forex
-        const forexChange = parseFloat(randomChange);
+        // Menambahkan sedikit variasi volatilitas sintetis yang sehat agar chart dan PnL bergerak aktif
+        const marketNoise = (Math.sin(cycleCount * 1.5) * 0.0012) + ((Math.random() - 0.48) * 0.0008);
+        eurUsdPrice += marketNoise;
+        
+        const forexChange = (marketNoise * 100).toFixed(2);
 
-        // PROMPT AI KHUSUS FOREX (EUR/USD)
+        // PROMPT AI FOREX
         const prompt = `
-Analisis kondisi pasar Forex (EUR/USD) saat ini secara ketat untuk mencari peluang profit:
-- Harga Kurs EUR/USD terkini: $${eurUsdPrice.toFixed(4)}
-- Perkiraan tren jangka pendek: ${forexChange >= 0 ? 'Bullish / Menguat' : 'Bearish / Melemah'}
+Analisis pasar Forex (EUR/USD) saat ini:
+- Harga Kurs: $${eurUsdPrice.toFixed(4)}
+- Tren Pendek: ${parseFloat(forexChange) >= 0 ? 'Bullish' : 'Bearish'}
 
-Aturan Perdagangan Forex:
-1. Pasar Forex sangat dipengaruhi oleh likuiditas dan kestabilan tren. 
-2. Jika tren indikasi naik, prioritaskan "BUY". Jika turun, prioritaskan "SELL".
-3. Jika pasar terlalu datar/konsolidasi, pilih "HOLD".
-4. Jawab HANYA dengan format kata pertama: "BUY", "SELL", atau "HOLD", diikuti titik, lalu alasan singkat maksimal 1 kalimat.
+Aturan:
+1. Tentukan "BUY", "SELL", atau "HOLD" secara tegas berdasarkan tren.
+2. Format jawaban: Kata pertama "BUY", "SELL", atau "HOLD", diikuti titik, lalu alasan 1 kalimat singkat.
 `;
         
         let aiAnalysisText = "Analisis pasar Forex diproses...";
@@ -61,34 +60,36 @@ Aturan Perdagangan Forex:
                 aiAnalysisText = aiResponse.text;
                 const textUpper = aiResponse.text.toUpperCase();
                 
-                if (textUpper.startsWith("BUY") || (textUpper.includes("BUY") && !textUpper.includes("NO BUY"))) {
+                if (textUpper.includes("BUY") && !textUpper.includes("NO BUY")) {
                     actionDecision = "BUY";
-                } else if (textUpper.startsWith("SELL") || (textUpper.includes("SELL") && !textUpper.includes("NO SELL"))) {
+                } else if (textUpper.includes("SELL") && !textUpper.includes("NO SELL")) {
                     actionDecision = "SELL";
                 } else {
                     actionDecision = "HOLD";
                 }
             }
         } catch (e) {
-            console.warn("AI fallback forex:", e.message);
-            actionDecision = forexChange >= 0 ? "BUY" : "SELL";
+            console.warn("AI fallback:", e.message);
+            actionDecision = parseFloat(forexChange) >= 0 ? "BUY" : "SELL";
         }
 
-        // Kelola Active Trades & Timer Auto-Close (Durasi diperpanjang jadi 5 menit / 300 detik agar tren forex sempat jalan)
+        // Kelola Active Trades & Timer Auto-Close (Durasi 3 menit / 180 detik agar lebih dinamis)
         for (let i = activeTrades.length - 1; i >= 0; i--) {
             let trade = activeTrades[i];
-            trade.timeLeft -= 30; // Berkurang 30 detik tiap loop
+            trade.timeLeft -= 30; 
 
             if (trade.timeLeft <= 0) {
-                // Perhitungan selisih harga forex (karena nilainya kecil misal 1.0850, kita kalikan faktor scaling profit forex)
+                // Perhitungan PnL Forex dengan scaling leverage virtual yang lebih terasa (misal 200x untuk magnifikasi pips)
                 let priceDiff = (trade.type === "BUY") ? (eurUsdPrice - trade.entryPrice) : (trade.entryPrice - eurUsdPrice);
-                let profitPercentage = (priceDiff / trade.entryPrice) * 100 * 50; // Leverage virtual forex lebih tinggi (misal 50x)
+                let profitPercentage = (priceDiff / trade.entryPrice) * 100 * 200; 
                 let pnlResult = (trade.amount * profitPercentage) / 100;
                 
-                let returnedCapital = trade.amount + pnlResult;
-                if (returnedCapital < 0) returnedCapital = 0;
+                // Batasi max loss/win agar simulasi tetap realistis
+                if (pnlResult > 150) pnlResult = 120 + Math.random() * 30;
+                if (pnlResult < -150) pnlResult = -100 - Math.random() * 30;
 
-                virtualBalance += returnedCapital;
+                virtualBalance += pnlResult;
+                if (virtualBalance < 0) virtualBalance = 0;
 
                 const closeRecord = {
                     time: new Date().toLocaleTimeString(),
@@ -105,13 +106,11 @@ Aturan Perdagangan Forex:
             }
         }
 
-        // Eksekusi Buka Posisi Forex (Modal $2,500)
-        const tradeAmount = 2500; 
-        const durationSeconds = 300; // 5 menit per posisi untuk Forex
+        // Eksekusi Buka Posisi (Modal $1,000 per posisi, durasi 180 detik)
+        const tradeAmount = 1000; 
+        const durationSeconds = 180; 
 
-        if ((actionDecision === "BUY" || actionDecision === "SELL") && virtualBalance >= tradeAmount && activeTrades.length < 1) {
-            virtualBalance -= tradeAmount; 
-            
+        if ((actionDecision === "BUY" || actionDecision === "SELL") && virtualBalance >= tradeAmount && activeTrades.length < 2) {
             const newTrade = {
                 type: actionDecision,
                 amount: tradeAmount,
@@ -134,7 +133,7 @@ Aturan Perdagangan Forex:
 
         serverLogs = {
             price: eurUsdPrice.toFixed(4),
-            change: forexChange,
+            change: parseFloat(forexChange),
             analysis: aiAnalysisText,
             decision: actionDecision,
             balance: virtualBalance,
@@ -152,10 +151,8 @@ Aturan Perdagangan Forex:
 app.get('/api/start-bot', async (req, res) => {
     if (!isBotRunning) {
         isBotRunning = true;
-        console.log("🤖 Bot Forex EUR/USD 24/7 dijalankan.");
-        
+        console.log("🤖 Bot Forex EUR/USD Diaktifkan.");
         await runForexBotCycle();
-
         if (botInterval) clearInterval(botInterval);
         botInterval = setInterval(runForexBotCycle, 30000);
     }
