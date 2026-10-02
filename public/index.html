@@ -12,7 +12,6 @@
         .glow-blue { box-shadow: 0 0 35px rgba(59, 130, 246, 0.3); }
         .glow-green { box-shadow: 0 0 20px rgba(16, 185, 129, 0.2); }
         
-        /* Animasi Robot Trading Asli */
         @keyframes robotFloat {
             0%, 100% { transform: translateY(0px) rotate(0deg); }
             50% { transform: translateY(-6px) rotate(1deg); }
@@ -20,11 +19,6 @@
         @keyframes eyeLaser {
             0%, 100% { opacity: 1; filter: drop-shadow(0 0 8px #38bdf8); }
             50% { opacity: 0.4; filter: drop-shadow(0 0 2px #38bdf8); }
-        }
-        @keyframes chartPulse {
-            0% { transform: scaleY(0.8); opacity: 0.6; }
-            50% { transform: scaleY(1.2); opacity: 1; }
-            100% { transform: scaleY(0.8); opacity: 0.6; }
         }
         @keyframes dataScan {
             0% { transform: translateY(-20px); opacity: 0; }
@@ -72,45 +66,34 @@
     <!-- Konten Utama -->
     <main class="max-w-md mx-auto p-4 space-y-4">
 
-        <!-- Banner Selamat Datang dengan Ilustrasi Robot 3D Animasi Trading Asli -->
+        <!-- Banner Selamat Datang dengan Ilustrasi Robot Orion -->
         <div class="glass-card rounded-2xl p-5 relative overflow-hidden glow-blue border border-blue-500/20">
-            <!-- Background Glow Efek Cyberpunk -->
             <div class="absolute right-0 top-0 w-40 h-40 bg-gradient-to-br from-blue-500/30 to-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
 
             <div class="flex justify-between items-center relative z-10">
                 <div class="w-5/12">
                     <h2 class="text-xl font-bold text-white tracking-tight">Halo, Hisam!</h2>
-                    <p class="text-xs text-gray-400 mt-1 leading-relaxed">Robot AI sedang memindai chart & mengambil posisi profit otomatis.</p>
+                    <p class="text-xs text-gray-400 mt-1 leading-relaxed"><span class="text-blue-400 font-semibold">Orion</span> siap memindai chart & mengambil posisi profit otomatis.</p>
                 </div>
 
-                <!-- Robot 3D Karakter Persis Desain Beranimasi Trading -->
+                <!-- Robot Orion -->
                 <div class="w-36 h-32 rounded-2xl bg-gradient-to-b from-[#0e1628] to-[#050811] border border-blue-500/40 flex items-center justify-center relative robot-animated shadow-2xl p-1">
-                    <!-- Lingkaran Hologram Background -->
                     <div class="absolute inset-1.5 border border-dashed border-blue-500/30 rounded-xl pointer-events-none"></div>
                     <div class="absolute w-24 h-24 bg-blue-500/15 rounded-full blur-xl"></div>
                     
-                    <!-- SVG Ilustrasi Robot Persis Desain Asli -->
                     <svg class="w-28 h-28 relative z-10" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <!-- Antena Atas Robot Berdenyut -->
                         <line x1="100" y1="50" x2="100" y2="28" stroke="#38bdf8" stroke-width="4" stroke-linecap="round"/>
                         <circle cx="100" cy="22" r="6" fill="#38bdf8" class="robot-eye"/>
 
-                        <!-- Telinga / Sisi Helm Kiri Kanan -->
                         <rect x="42" y="80" width="16" height="40" rx="6" fill="#1e293b" stroke="#38bdf8" stroke-width="3"/>
                         <rect x="142" y="80" width="16" height="40" rx="6" fill="#1e293b" stroke="#38bdf8" stroke-width="3"/>
                         <circle cx="50" cy="100" r="3" fill="#60a5fa"/>
                         <circle cx="150" cy="100" r="3" fill="#60a5fa"/>
 
-                        <!-- Kepala Utama Robot (Helm Futuristik) -->
                         <rect x="52" y="48" width="96" height="96" rx="30" fill="url(#robotBodyGrad)" stroke="#60a5fa" stroke-width="4"/>
-                        
-                        <!-- Panel Visor Layar Depan Hitam -->
                         <rect x="65" y="66" width="70" height="52" rx="14" fill="#020617" stroke="#38bdf8" stroke-width="3"/>
-                        
-                        <!-- Garis Efek Scanner Data Bergerak di Visor -->
                         <line x1="72" y1="92" x2="128" y2="92" stroke="#38bdf8" stroke-width="1.5" stroke-opacity="0.4" class="scan-line"/>
 
-                        <!-- Mata AI Biru Menyala Bersinar (Animasi Berkedip) -->
                         <g class="robot-eye">
                             <circle cx="88" cy="92" r="9" fill="#38bdf8"/>
                             <circle cx="88" cy="92" r="4" fill="#ffffff"/>
@@ -118,17 +101,14 @@
                             <circle cx="112" cy="92" r="4" fill="#ffffff"/>
                         </g>
 
-                        <!-- Indikator Mulut / Gelombang Audio Trading -->
                         <path d="M82 122H118" stroke="#38bdf8" stroke-width="3.5" stroke-linecap="round"/>
                         <path d="M92 130H108" stroke="#60a5fa" stroke-width="2.5" stroke-linecap="round"/>
 
-                        <!-- Lengan Mini Robot di Bawah Helm (Simulasi Sedang Mengetik/Trading) -->
                         <path d="M60 144L45 170" stroke="#38bdf8" stroke-width="5" stroke-linecap="round"/>
                         <path d="M140 144L155 170" stroke="#38bdf8" stroke-width="5" stroke-linecap="round"/>
                         <circle cx="43" cy="173" r="5" fill="#60a5fa"/>
                         <circle cx="157" cy="173" r="5" fill="#60a5fa"/>
 
-                        <!-- Gradien Warna Kepala Robot -->
                         <defs>
                             <linearGradient id="robotBodyGrad" x1="52" y1="48" x2="148" y2="144" gradientUnits="userSpaceOnUse">
                                 <stop stop-color="#1e293b"/>
@@ -139,7 +119,7 @@
                 </div>
             </div>
 
-            <!-- Profit Hari Ini & Tombol Eksekusi -->
+            <!-- Profit & Tombol Mulai/Stop Bot -->
             <div class="flex items-center justify-between bg-gray-900/80 rounded-xl p-3.5 border border-gray-800/80 mt-4 relative z-10">
                 <div>
                     <span class="text-[11px] text-gray-400 font-medium block">Profit Hari Ini!</span>
@@ -156,7 +136,7 @@
             </div>
         </div>
 
-        <!-- Market Watch Card (EUR/USD) -->
+        <!-- Market Watch Card (EUR/USD) & Grafik Interaktif -->
         <div class="glass-card rounded-2xl p-4">
             <div class="flex justify-between items-center mb-3">
                 <div class="flex items-center space-x-2.5">
@@ -166,7 +146,7 @@
                             <span>EUR/USD</span>
                             <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                         </h3>
-                        <p class="text-[10px] text-gray-400">Forex Exchange • Autonomous Loop</p>
+                        <p class="text-[10px] text-gray-400">Forex Exchange • <span id="chartStatusLabel" class="text-gray-500">Grafik Standby</span></p>
                     </div>
                 </div>
                 <div class="text-right">
@@ -185,7 +165,7 @@
                 <button class="flex-1 py-1 text-[11px] font-semibold text-gray-400 hover:text-white rounded-lg transition">1d</button>
             </div>
 
-            <!-- Grafik Live Bergerak Naik Turun -->
+            <!-- Area Grafik Profesional (Bergerak Saat Bot Dinyalakan) -->
             <div class="h-32 w-full bg-gray-900/70 rounded-xl border border-gray-800/80 p-2 flex flex-col justify-between relative overflow-hidden">
                 <div class="absolute inset-0 bg-gradient-to-t from-blue-500/10 via-transparent to-transparent pointer-events-none"></div>
                 <div class="flex justify-between text-[10px] text-gray-500 z-10">
@@ -203,26 +183,26 @@
                                 <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
                             </linearGradient>
                         </defs>
-                        <path id="chartArea" d="M0,50 Q50,40 100,45 T200,25 T300,15 L300,60 L0,60 Z" fill="url(#chartGrad)"></path>
-                        <path id="chartLine" d="M0,50 Q50,40 100,45 T200,25 T300,15" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round"></path>
+                        <path id="chartArea" d="M0,35 L300,35 L300,60 L0,60 Z" fill="url(#chartGrad)"></path>
+                        <path id="chartLine" d="M0,35 L300,35" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round"></path>
                     </svg>
                 </div>
                 <div class="flex justify-between text-[10px] text-gray-400 z-10">
-                    <span id="chartMin" class="text-gray-500">Min: 1.0820</span>
-                    <span id="chartMax" class="text-emerald-400 font-semibold">Max: 1.0890</span>
+                    <span id="chartMin" class="text-gray-500">Min: 1.0850</span>
+                    <span id="chartMax" class="text-emerald-400 font-semibold">Max: 1.0850</span>
                 </div>
             </div>
 
-            <!-- Kotak Pikiran AI Live -->
+            <!-- Kotak Pikiran AI Orion -->
             <div class="bg-gray-900/90 rounded-xl p-3 border border-blue-500/20 mt-3">
                 <div class="flex items-center justify-between mb-1">
                     <span class="text-[10px] uppercase tracking-wider text-blue-400 font-bold flex items-center space-x-1">
                         <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping"></span>
-                        <span>Pikiran AI Terkini:</span>
+                        <span>Analisis Orion AI:</span>
                     </span>
                     <span id="activePosIndicator" class="text-[10px] text-yellow-400 font-semibold bg-yellow-500/10 px-2 py-0.5 rounded border border-yellow-500/20">Posisi: Tidak Ada</span>
                 </div>
-                <p id="aiAnalysis" class="text-xs text-gray-300 italic leading-snug">Menunggu siklus analisis AI berikutnya...</p>
+                <p id="aiAnalysis" class="text-xs text-gray-300 italic leading-snug">Bot sedang standby. Klik "Mulai Bot" untuk mengaktifkan pemindaian.</p>
             </div>
         </div>
 
@@ -266,11 +246,11 @@
         <div class="glass-card rounded-2xl p-4">
             <div class="flex justify-between items-center mb-3">
                 <h3 class="font-bold text-sm text-white flex items-center space-x-1.5">
-                    <span>⚡ Aktivitas Bot</span>
+                    <span>⚡ Aktivitas Transaksi</span>
                 </h3>
                 <span class="text-[11px] text-blue-400 flex items-center space-x-1 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                    <span id="liveIndicator">Live</span>
+                    <span id="liveIndicator">Standby</span>
                 </span>
             </div>
             <div id="tradeHistoryList" class="space-y-2 max-h-56 overflow-y-auto pr-1">
@@ -307,31 +287,51 @@
     <script>
         let isRunning = false;
         let startTime = null;
+        let chartPoints = [35, 35, 35, 35, 35, 35, 35, 35, 35, 35]; // Garis awal flat
 
-        function updateLiveChart(currentPrice) {
-            const seed = parseFloat(currentPrice) || 1.0850;
-            const p1 = (seed + (Math.sin(Date.now() / 1000) * 0.002)).toFixed(4);
-            const p2 = (seed + (Math.cos(Date.now() / 800) * 0.003)).toFixed(4);
-            const p3 = (seed + (Math.sin(Date.now() / 1200) * 0.0015)).toFixed(4);
-            const p4 = seed.toFixed(4);
-
-            const y1 = 45 - ((p1 - seed) * 3000);
-            const y2 = 30 - ((p2 - seed) * 3000);
-            const y3 = 20 - ((p3 - seed) * 3000);
-            const y4 = 35 - ((p4 - seed) * 3000);
-
-            const pathD = `M0,50 Q75,${y1} 150,${y2} T225,${y3} T300,${y4}`;
-            const areaD = `${pathD} L300,60 L0,60 Z`;
-
+        function updateChartLine(currentPrice, running) {
             const lineElem = document.getElementById('chartLine');
             const areaElem = document.getElementById('chartArea');
-            if (lineElem && areaElem) {
-                lineElem.setAttribute('d', pathD);
-                areaElem.setAttribute('d', areaD);
+            const chartStatus = document.getElementById('chartStatusLabel');
+
+            if (!running) {
+                chartStatus.innerText = "Grafik Standby";
+                // Garis mendatar stabil saat bot mati
+                const flatPath = `M0,35 L50,35 L100,35 L150,35 L200,35 L250,35 L300,35`;
+                lineElem.setAttribute('d', flatPath);
+                areaElem.setAttribute('d', `${flatPath} L300,60 L0,60 Z`);
+                return;
             }
 
-            document.getElementById('chartMin').innerText = `Min: ${(seed - 0.0035).toFixed(4)}`;
-            document.getElementById('chartMax').innerText = `Max: ${(seed + 0.0035).toFixed(4)}`;
+            chartStatus.innerText = "Live Real-time Trading";
+
+            // Tambahkan titik harga baru secara dinamis mengikuti fluktuasi harga
+            const baseVal = parseFloat(currentPrice) || 1.0850;
+            const randomOffset = (Math.random() - 0.48) * 12; // Sedikit naik turun acak
+            let newY = 30 + randomOffset;
+            newY = Math.max(10, Math.min(50, newY)); // Batasi dalam kotak chart
+
+            chartPoints.shift();
+            chartPoints.push(newY);
+
+            // Buat jalur SVG mulus berdasarkan array titik chartPoints (10 titik)
+            const step = 300 / (chartPoints.length - 1);
+            let pathD = `M 0 ${chartPoints[0]}`;
+            for (let i = 1; i < chartPoints.length; i++) {
+                const x = i * step;
+                const prevX = (i - 1) * step;
+                const xc = (prevX + x) / 2;
+                const yc = (chartPoints[i - 1] + chartPoints[i]) / 2;
+                pathD += ` Q ${prevX} ${chartPoints[i - 1]}, ${xc} ${yc}`;
+            }
+
+            lineElem.setAttribute('d', pathD);
+            areaElem.setAttribute('d', `${pathD} L300,60 L0,60 Z`);
+
+            const minP = (baseVal - 0.0025).toFixed(4);
+            const maxP = (baseVal + 0.0025).toFixed(4);
+            document.getElementById('chartMin').innerText = `Min: ${minP}`;
+            document.getElementById('chartMax').innerText = `Max: ${maxP}`;
         }
 
         async function fetchStatus() {
@@ -349,6 +349,7 @@
             const badge = document.getElementById('botBadge');
             const statusText = document.getElementById('botStatusText');
             const toggleBtn = document.getElementById('toggleBtn');
+            const liveIndicator = document.getElementById('liveIndicator');
 
             if (isRunning) {
                 if (!startTime) startTime = Date.now();
@@ -356,6 +357,7 @@
                 statusText.innerText = "Bot Aktif";
                 toggleBtn.innerText = "Hentikan Bot";
                 toggleBtn.className = "px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-red-600/30";
+                liveIndicator.innerText = "Live";
                 
                 const diffSec = Math.floor((Date.now() - startTime) / 1000);
                 const hours = Math.floor(diffSec / 3600);
@@ -367,13 +369,16 @@
                 statusText.innerText = "Bot Standby";
                 toggleBtn.innerText = "Mulai Bot";
                 toggleBtn.className = "px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-blue-600/30";
+                liveIndicator.innerText = "Standby";
                 document.getElementById('botUptime').innerText = "0j 0m";
             }
 
             if (data) {
                 const currentPriceStr = data.price || '1.0850';
                 document.getElementById('marketPrice').innerText = `$${currentPriceStr}`;
-                updateLiveChart(currentPriceStr);
+                
+                // Update grafik hanya jika bot aktif berjalan
+                updateChartLine(currentPriceStr, isRunning);
 
                 const changeElem = document.getElementById('marketChange');
                 const changeVal = data.change || 0;
@@ -446,11 +451,6 @@
                 console.error("Gagal mengubah status bot:", e);
             }
         }
-
-        setInterval(() => {
-            const currentVal = document.getElementById('marketPrice').innerText.replace('$', '');
-            updateLiveChart(currentVal);
-        }, 1500);
 
         setInterval(fetchStatus, 3000);
         fetchStatus();
