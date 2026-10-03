@@ -21,16 +21,29 @@ const META_ACCOUNT_ID = process.env.META_ACCOUNT_ID || 'YOUR_META_ACCOUNT_ID';
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 2. STATEFUL AGENT MEMORY ENGINE & PRICE HISTORY
+// 2. STATEFUL AGENT MEMORY ENGINE
 let isBotRunning = false;
 let botInterval = null;
 let virtualBalance = 10000;
 let activeTrade = null;
 let tradeHistory = [];
-let priceHistory = []; // Menyimpan riwayat harga untuk kalkulasi EMA & MACD
+let priceHistory = [];
 let cycleCount = 0;
 let serverLogs = {};
 let marketMemory = []; 
+
+// DYNAMIC MONEY MANAGEMENT ENGINE
+function calculateDynamicRisk(balance) {
+    // Allocation Modal: 5% dari total saldo saat ini (minimal $100 per posisi)
+    const tradeAmount = Math.max(100, balance * 0.05);
+
+    // Autoscaling Lot Size: 0.01 Lot per $1,000 Saldo (minimal 0.01 lot)
+    // Contoh: Saldo $10,000 -> 0.10 Lot | Saldo $12,500 -> 0.12 Lot | Saldo $5,000 -> 0.05 Lot
+    let calculatedLot = parseFloat((balance / 100000).toFixed(2));
+    if (calculatedLot < 0.01) calculatedLot = 0.01;
+
+    return { tradeAmount, calculatedLot };
+}
 
 function updateMarketMemory(price, rsi, ema, macdStatus, decision, reasoning, pnl) {
     marketMemory.push({
@@ -66,7 +79,7 @@ function calculateMACD(prices) {
     const ema12 = calculateEMA(prices, 12);
     const ema26 = calculateEMA(prices, Math.min(prices.length, 26));
     const macdLine = ema12 - ema26;
-    const signalLine = macdLine * 0.8; // Pembobotan garis sinyal cepat
+    const signalLine = macdLine * 0.8;
     const histogram = macdLine - signalLine;
 
     let status = "NEUTRAL";
@@ -80,9 +93,9 @@ function calculateMACD(prices) {
     };
 }
 
-// 3. BROKER EXECUTION LAYER (Simulasi vs Live Execution MetaTrader)
+// 3. BROKER EXECUTION LAYER
 async function executeBrokerOrder(action, price, lotSize = 0.01, slPrice = 0, tpPrice = 0) {
-    console.log(`[Agent Action Execution] Executing ${action} Order | Price: $${price} | Lot: ${lotSize}`);
+    console.log(`[Agent Execution] Action: ${action} | Price: $${price} | Dynamic Lot: ${lotSize}`);
 
     if (ENABLE_LIVE_BROKER) {
         try {
@@ -111,11 +124,11 @@ async function executeBrokerOrder(action, price, lotSize = 0.01, slPrice = 0, tp
             console.error('[Live Broker Error]: Gagal eksekusi ke MetaTrader:', err.message);
         }
     } else {
-        console.log('[Paper Trading Engine] Order dieksekusi secara lokal.');
+        console.log('[Paper Trading Engine] Order dieksekusi secara lokal dengan Lot Dinamis.');
     }
 }
 
-// 4. AUTONOMOUS AGENT MAIN LOOP (SCALPING + MULTI-INDICATOR MODE)
+// 4. AUTONOMOUS AGENT MAIN LOOP
 async function runAutonomousForexAgent() {
     cycleCount++;
     try {
@@ -124,32 +137,38 @@ async function runAutonomousForexAgent() {
         const forexData = await forexRes.json();
         let eurUsdPrice = forexData.rates.USD;
         
-        // Volatilitas sintetis untuk pergerakan intraday
+        // Volatilitas sintetis
         const marketNoise = (Math.sin(cycleCount * 1.5) * 0.0004) + ((Math.random() - 0.48) * 0.0003);
         eurUsdPrice += marketNoise;
         const forexChange = (marketNoise * 100).toFixed(2);
 
-        // Update riwayat harga (Maksimal simpan 50 baris harga)
+        // Update riwayat harga
         priceHistory.push(eurUsdPrice);
         if (priceHistory.length > 50) priceHistory.shift();
 
-        // KALKULASI TEKNIKAL: RSI, EMA, MACD
+        // KALKULASI TEKNIKAL
         const rsiValue = Math.floor(40 + (Math.sin(cycleCount) * 25) + (Math.random() * 10));
         const ema20Value = calculateEMA(priceHistory, 20);
         const macdData = calculateMACD(priceHistory);
         const emaTrend = eurUsdPrice >= ema20Value ? "UPTREND (Bullish)" : "DOWNTREND (Bearish)";
+
+        // KALKULASI RISK MANAGEMENT DINAMIS
+        const { tradeAmount, calculatedLot } = calculateDynamicRisk(virtualBalance);
 
         // Hitung PnL Posisi Aktif
         let currentPnl = 0;
         let pnlPercentage = 0;
         if (activeTrade) {
             let priceDiff = (activeTrade.type === "BUY") ? (eurUsdPrice - activeTrade.entryPrice) : (activeTrade.entryPrice - eurUsdPrice);
-            pnlPercentage = (priceDiff / activeTrade.entryPrice) * 100 * 10; // Virtual Leverage 10x
+            pnlPercentage = (priceDiff / activeTrade.entryPrice) * 100 * 10;
             currentPnl = (activeTrade.amount * pnlPercentage) / 100;
 
-            // HARD SAFETY GUARD: Stop Loss (-$10) & Take Profit (+$15)
-            if (currentPnl <= -10 || currentPnl >= 15) {
-                const isSL = currentPnl <= -10;
+            // HARD SAFETY GUARD DINAMIS (Disesuaikan skala posisi)
+            const dynamicSL = -10 * (activeTrade.lot / 0.10);
+            const dynamicTP = 15 * (activeTrade.lot / 0.10);
+
+            if (currentPnl <= dynamicSL || currentPnl >= dynamicTP) {
+                const isSL = currentPnl <= dynamicSL;
                 virtualBalance += currentPnl;
                 
                 await executeBrokerOrder("CLOSE", eurUsdPrice);
@@ -169,38 +188,37 @@ async function runAutonomousForexAgent() {
             }
         }
 
-        // PROMPT ADVANCED AGENT (RSI + EMA + MACD)
+        // PROMPT SCALPER DENGAN DYNAMIC MONEY MANAGEMENT
         const systemPrompt = `
-Kamu adalah "Orion", Autonomous AI Agent Trading Forex kelas dunia dengan disiplin Scalping ala Desmond Wira.
+Kamu adalah "Orion", Autonomous AI Agent Trading Forex dengan strategi Scalping & Dynamic Money Management ala Desmond Wira.
 
 KONTEKS MEMORI PASAR (10 SIKLUS TERAKHIR):
 ${JSON.stringify(marketMemory, null, 2)}
 
-DATA PASAR REALT-IME & MULTI-INDIKATOR SAAT INI:
-- Pasangan Mata Uang: EUR/USD
-- Harga Terbaru: $${eurUsdPrice.toFixed(4)} (${parseFloat(forexChange) >= 0 ? '+' : ''}${forexChange}%)
+DATA PASAR & RISIKO DINAMIS SAAT INI:
+- EUR/USD Rate: $${eurUsdPrice.toFixed(4)} (${parseFloat(forexChange) >= 0 ? '+' : ''}${forexChange}%)
 - Indikator RSI (14): ${rsiValue}
-- Indikator EMA (20): $${ema20Value.toFixed(4)} -> Tren Utama: ${emaTrend}
-- Indikator MACD: ${macdData.macd} (Signal: ${macdData.signal}) -> Sinyal: ${macdData.status}
-- Posisi Terbuka Aktif: ${activeTrade ? `JENIS: ${activeTrade.type} | Entry: $${activeTrade.entryPrice.toFixed(4)} \vert{} PnL Berjalan:$${currentPnl.toFixed(2)}` : 'TIDAK ADA POSISI'}
-- Saldo Akun: $${virtualBalance.toFixed(2)}
+- Indikator EMA (20): $${ema20Value.toFixed(4)} (${emaTrend})
+- Indikator MACD: ${macdData.macd} (${macdData.status})
+- Saldo Akun Terkini: $${virtualBalance.toFixed(2)}
+- Alokasi Risk Dinamis: Modal Per Position $${tradeAmount.toFixed(2)} | Auto-Scaled Lot: ${calculatedLot} Lot
+- Posisi Aktif: ${activeTrade ? `${activeTrade.type} (${activeTrade.lot} Lot) di $${activeTrade.entryPrice.toFixed(4)} \vert{} PnL:$${currentPnl.toFixed(2)}` : 'TIDAK ADA POSISI'}
 
-ATURAN SCALPING & PEMBACAAN INDIKATOR:
-1. JIKA SEDANG ADA POSISI:
-   - Jika PnL berjalan sudah untung >= +$3.00, UTAMAKAN KELUARKAN "CLOSE" untuk kunci profit cepat!
-   - Jika PnL minus dan sinyal MACD/EMA berbalik arah merugikan, keluarkan "CLOSE".
+ATURAN ENTRY & EXIT:
+1. JIKA ADA POSISI:
+   - Jika PnL untung >= +$3.00, keluarkan "CLOSE" untuk amankan profit cepat!
+   - Jika PnL minus & tren berbalik, pilih "CLOSE".
 2. JIKA TIDAK ADA POSISI:
-   - Syarat "BUY": RSI < 45, EMA menunjukkan UPTREND, atau MACD membentuk GOLDEN CROSS.
-   - Syarat "SELL": RSI > 55, EMA menunjukkan DOWNTREND, atau MACD membentuk DEATH CROSS.
-   - Jika indikator saling bertabrakan/tanpa konfirmasi jelas, keluarkan "HOLD".
+   - "BUY": RSI < 45, EMA UPTREND, atau MACD GOLDEN CROSS.
+   - "SELL": RSI > 55, EMA DOWNTREND, atau MACD DEATH CROSS.
+   - Jika indikator bertabrakan, keluarkan "HOLD".
 
 ATURAN RESPON JSON:
-Balas HANYA dengan format JSON MURNI sesuai schema berikut:
+Balas HANYA dengan format JSON MURNI:
 {
   "action": "BUY" | "SELL" | "CLOSE" | "HOLD",
   "confidence": 0.85,
-  "lotSize": 0.01,
-  "reasoning": "Alasan analisis gabungan RSI, EMA, dan MACD (maksimal 2 kalimat)"
+  "reasoning": "Penjelasan singkat keputusan berbasis indikator dan risk dinamis (maks 2 kalimat)"
 }
 `;
 
@@ -220,7 +238,7 @@ Balas HANYA dengan format JSON MURNI sesuai schema berikut:
                 agentDecision = JSON.parse(cleanedJson);
             }
         } catch (e) {
-            console.warn("[Gemini Agent Error]: Fallback ke logika indikator ->", e.message);
+            console.warn("[Gemini Agent Error]: Fallback ke indikator ->", e.message);
             if (activeTrade && currentPnl >= 3) {
                 agentDecision.action = "CLOSE";
             } else if (!activeTrade) {
@@ -230,12 +248,10 @@ Balas HANYA dengan format JSON MURNI sesuai schema berikut:
             } else {
                 agentDecision.action = "HOLD";
             }
-            agentDecision.reasoning = `Fallback indikator aktif. RSI: ${rsiValue}, EMA: ${ema20Value.toFixed(4)}`;
+            agentDecision.reasoning = `Fallback indikator aktif. RSI: ${rsiValue}, Lot: ${calculatedLot}`;
         }
 
-        const tradeAmount = 500; // Modal per posisi $500
-
-        // 5. AGENT ACTION DISPATCHER & EXECUTION
+        // AGENT ACTION DISPATCHER WITH DYNAMIC ALLOCATION
         if (agentDecision.action === "CLOSE" && activeTrade) {
             virtualBalance += currentPnl;
             await executeBrokerOrder("CLOSE", eurUsdPrice);
@@ -257,14 +273,15 @@ Balas HANYA dengan format JSON MURNI sesuai schema berikut:
             activeTrade = {
                 type: agentDecision.action,
                 amount: tradeAmount,
+                lot: calculatedLot,
                 entryPrice: eurUsdPrice
             };
 
-            await executeBrokerOrder(agentDecision.action, eurUsdPrice, agentDecision.lotSize || 0.01);
+            await executeBrokerOrder(agentDecision.action, eurUsdPrice, calculatedLot);
 
             tradeHistory.unshift({
                 time: new Date().toLocaleTimeString('id-ID'),
-                type: `OPEN ${agentDecision.action}`,
+                type: `OPEN ${agentDecision.action} (${calculatedLot} Lot)`,
                 open: eurUsdPrice.toFixed(4),
                 close: eurUsdPrice.toFixed(4),
                 pnl: 0,
@@ -279,13 +296,15 @@ Balas HANYA dengan format JSON MURNI sesuai schema berikut:
 
         if (tradeHistory.length > 25) tradeHistory.pop();
 
-        // 6. BUILD LOGS FOR FRONTEND DASHBOARD
+        // BUILD LOGS FOR FRONTEND DASHBOARD
         serverLogs = {
             price: eurUsdPrice.toFixed(4),
             change: parseFloat(forexChange),
-            analysis: `[Technical Scalper - Conf: ${(agentDecision.confidence * 100).toFixed(0)}%] ${agentDecision.reasoning}`,
+            analysis: `[Scaled ${calculatedLot} Lot - Conf: ${(agentDecision.confidence * 100).toFixed(0)}%] ${agentDecision.reasoning}`,
             decision: agentDecision.action,
             balance: virtualBalance,
+            dynamicLot: calculatedLot,
+            tradeAllocation: tradeAmount,
             activeTrade: activeTrade,
             currentPnl: currentPnl,
             indicators: {
@@ -298,7 +317,7 @@ Balas HANYA dengan format JSON MURNI sesuai schema berikut:
             timestamp: new Date().toLocaleTimeString('id-ID')
         };
 
-        console.log(`[Scalper Orion] Price: $${eurUsdPrice.toFixed(4)} | EMA20: $${ema20Value.toFixed(4)} | Action: ${agentDecision.action} | PnL: $${currentPnl.toFixed(2)}`);
+        console.log(`[Scaled Orion] Balance: $${virtualBalance.toFixed(2)} | Lot: ${calculatedLot} | Action: ${agentDecision.action} | PnL: $${currentPnl.toFixed(2)}`);
 
     } catch (error) {
         console.error("Error autonomous agent loop:", error.message);
@@ -309,12 +328,12 @@ Balas HANYA dengan format JSON MURNI sesuai schema berikut:
 app.get('/api/start-bot', async (req, res) => {
     if (!isBotRunning) {
         isBotRunning = true;
-        console.log("⚡ Multi-Indicator Forex AI Agent Orion Diaktifkan.");
+        console.log("⚡ Dynamic Scalper AI Agent Orion Diaktifkan.");
         await runAutonomousForexAgent();
         if (botInterval) clearInterval(botInterval);
         botInterval = setInterval(runAutonomousForexAgent, 25000);
     }
-    res.json({ success: true, message: "Multi-Indicator Scalper Agent aktif!" });
+    res.json({ success: true, message: "Dynamic Scalper Agent aktif!" });
 });
 
 app.get('/api/stop-bot', (req, res) => {
@@ -332,5 +351,5 @@ app.get('/api/bot-status', (req, res) => {
 });
 
 app.listen(port, () => {
-    console.log(`Multi-Indicator Forex AI Agent Orion berjalan di port ${port}`);
+    console.log(`Dynamic Scalper Forex AI Agent Orion berjalan di port ${port}`);
 });
