@@ -10,7 +10,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // Gunakan environment variable agar API Key aman & tidak bocor di GitHub
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'PASTE_KEY_KAMU_DI_ENVIRONMENT_VARIABLE' });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'AQ.Ab8RN6KkAKaKq9epVyDmaL7DPWlj98JlC9kAulmw2TQFimoULA' });
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
