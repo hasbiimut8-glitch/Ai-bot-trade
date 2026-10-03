@@ -9,8 +9,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Gunakan environment variable agar API Key aman & tidak bocor di GitHub
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'AQ.Ab8RN6KkAKaKq9epVyDmaL7DPWlj98JlC9kAulmw2TQFimoULA' });
+// API Key Google Gemini
+const ai = new GoogleGenAI({ apiKey: 'AQ.Ab8RN6KkAKaKq9epVyDmaL7DPWlj98JlC9kAulmw2TQFimoULA' });
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -32,7 +32,7 @@ async function runAutonomousForexBot() {
         const forexData = await forexRes.json();
         let eurUsdPrice = forexData.rates.USD;
         
-        // Tambahkan volatilitas sintetis yang lebih halus
+        // Pergerakan harga sintetis yang lebih halus
         const marketNoise = (Math.sin(cycleCount * 1.5) * 0.0004) + ((Math.random() - 0.48) * 0.0003);
         eurUsdPrice += marketNoise;
         const forexChange = (marketNoise * 100).toFixed(2);
@@ -43,18 +43,18 @@ async function runAutonomousForexBot() {
         if (activeTrade) {
             let priceDiff = (activeTrade.type === "BUY") ? (eurUsdPrice - activeTrade.entryPrice) : (activeTrade.entryPrice - eurUsdPrice);
             
-            // PERBAIKAN: Leverage disesuaikan ke 10x agar PnL tidak membengkak ribuan dolar
+            // Leverage virtual 10x agar PnL terkontrol & tidak memicu loss ribuan dolar
             pnlPercentage = (priceDiff / activeTrade.entryPrice) * 100 * 10; 
             currentPnl = (activeTrade.amount * pnlPercentage) / 100;
 
-            // HARD PROTECTION: Auto Stop Loss (-$50) & Take Profit (+$100) otomatis di Backend
+            // PROTEKSI MANDIRI: Auto Stop Loss (-$50) & Take Profit (+$100)
             if (currentPnl <= -50 || currentPnl >= 100) {
                 const isSL = currentPnl <= -50;
                 virtualBalance += currentPnl;
                 if (virtualBalance < 0) virtualBalance = 0;
 
                 tradeHistory.unshift({
-                    time: new Date().toLocaleTimeString(),
+                    time: new Date().toLocaleTimeString('id-ID'),
                     type: `AUTO-CLOSE (${isSL ? 'STOP LOSS' : 'TAKE PROFIT'})`,
                     open: activeTrade.entryPrice.toFixed(4),
                     close: eurUsdPrice.toFixed(4),
@@ -63,26 +63,30 @@ async function runAutonomousForexBot() {
                 });
                 if (tradeHistory.length > 25) tradeHistory.pop();
                 activeTrade = null;
-                console.log(`[Auto-Protection] Posisi ditutup otomatis via ${isSL ? 'Stop Loss' : 'Take Profit'}. PnL: $${currentPnl.toFixed(2)}`);
+                console.log(`[Money Management] Posisi ditutup otomatis via ${isSL ? 'Stop Loss' : 'Take Profit'}. PnL: $${currentPnl.toFixed(2)}`);
             }
         }
 
         // Ambil 3 riwayat transaksi terakhir sebagai "Memori Belajar" Gemini
         const recentHistory = tradeHistory.slice(0, 3).map(h => `${h.type} di ${h.open}, hasil PnL: $${h.pnl ? h.pnl.toFixed(2) : 0}`).join(' | ') || "Belum ada riwayat.";
 
-        // PROMPT AI FULL AUTONOMOUS & AGRESIF
+        // PROMPT AI: PERSONA DESMOND WIRA (FULL-TIME TRADER EXPERT & DISIPLIN)
         const prompt = `
-Kamu adalah AI Agent Autonomous Trader profesional di pasar Forex (EUR/USD).
-- Harga Kurs Saat Ini: $${eurUsdPrice.toFixed(4)}
-- Perubahan Tren: ${parseFloat(forexChange) >= 0 ? '+' : ''}${forexChange}%
-- Status Posisi Kamu Saat Ini: ${activeTrade ? `SEDANG MEMBUKA ${activeTrade.type} di harga $${activeTrade.entryPrice.toFixed(4)} (PnL sementara:$${currentPnl.toFixed(2)})` : 'TIDAK ADA POSISI (Bebas masuk)'}
-- Memori / Riwayat Evaluasi Terakhir: ${recentHistory}
+Kamu adalah "Orion", seorang Full-Time Trader Forex profesional dan berpengalaman dengan filosofi trading ala Desmond Wira ("Smart Traders Not Gamblers").
 
-ATURAN UTAMA (WAJIB DITAATI):
-1. Bersikaplah **AGRESIF**. Jangan terlalu banyak memilih HOLD kecuali pasar benar-benar stagnan total. Cari peluang cuan setiap ada pergerakan kecil.
-2. Jika KAMU TIDAK ADA POSISI, putuskan secara tegas: ketik "BUY" atau "SELL" di kata pertama untuk membuka posisi baru.
-3. Jika KAMU SEDANG ADA POSISI, evaluasi kinerjamu. Jika sudah untung atau jika tren berbalik merugikan berdasarkan memori evaluasi, kamu BEBAS memutuskan untuk mengetik "CLOSE" di kata pertama untuk menutup posisi, atau biarkan tetap jalan jika masih potensial.
-4. Format Jawaban: Kata pertama HARUS salah satu dari: "BUY", "SELL", atau "CLOSE", atau "HOLD", diikuti titik, lalu berikan alasan singkat analisismu.
+FILOSOFI & MANAJEMEN RISIKO KAMU:
+1. TRADING BUKAN JUDI: Selalu prioritaskan perlindungan modal (Capital Preservation). Jangan pernah membuka posisi tanpa alasan teknikal/dinamika harga yang kuat.
+2. DISIPLIN & OBJEKTIF: Analisis pergerakan EUR/USD secara dingin dan profesional. Hindari emosi atau terburu-buru.
+3. KONDISI PASAR SAAT INI:
+   - Harga Kurs EUR/USD: $${eurUsdPrice.toFixed(4)}
+   - Dinamika Perubahan Tren: ${parseFloat(forexChange) >= 0 ? '+' : ''}${forexChange}%
+   - Status Posisi Aktif: ${activeTrade ? `SEDANG MEMBUKA ${activeTrade.type} di harga $${activeTrade.entryPrice.toFixed(4)} (PnL berjalan:$${currentPnl.toFixed(2)})` : 'TIDAK ADA POSISI (Siap eksekusi jika ada setup bagus)'}
+   - Evaluasi Transaksi Terakhir: ${recentHistory}
+
+PETUNJUK EKSEKUSI TRADING PLAN:
+- Jika TIDAK ADA POSISI: Cari setup high probability. Jika tren mendukung, putuskan "BUY" atau "SELL". Jika pasar tidak jelas/risk-to-reward buruk, pilih "HOLD" demi mengamankan modal.
+- Jika SEDANG ADA POSISI: Evaluasi PnL berjalan. Jika sudah mencapai target profit wajar atau tren berbalik arah merugikan, putuskan "CLOSE". Jika masih sesuai jalur analisa, pilih "HOLD".
+- Format Jawaban: Kata pertama WAJIB salah satu dari: "BUY", "SELL", "CLOSE", atau "HOLD", diikuti titik, lalu berikan analisis singkat dingin ala Desmond Wira (maksimal 2 kalimat).
 `;
 
         let aiAnalysisText = "Analisis otonom diproses...";
@@ -108,7 +112,7 @@ ATURAN UTAMA (WAJIB DITAATI):
         }
 
         // EKSEKUSI KEPUTUSAN OTONOM GEMINI
-        const tradeAmount = 500; // Modal posisi $500 (lebih aman dibanding $1000)
+        const tradeAmount = 500; // Modal per posisi $500 (Aman untuk modal $10.000)
 
         // 1. Jika Gemini memutuskan CLOSE posisi aktif
         if (actionDecision === "CLOSE" && activeTrade) {
@@ -116,7 +120,7 @@ ATURAN UTAMA (WAJIB DITAATI):
             if (virtualBalance < 0) virtualBalance = 0;
 
             tradeHistory.unshift({
-                time: new Date().toLocaleTimeString(),
+                time: new Date().toLocaleTimeString('id-ID'),
                 type: `CLOSE (${activeTrade.type})`,
                 open: activeTrade.entryPrice.toFixed(4),
                 close: eurUsdPrice.toFixed(4),
@@ -135,7 +139,7 @@ ATURAN UTAMA (WAJIB DITAATI):
             };
 
             tradeHistory.unshift({
-                time: new Date().toLocaleTimeString(),
+                time: new Date().toLocaleTimeString('id-ID'),
                 type: `OPEN ${actionDecision}`,
                 open: eurUsdPrice.toFixed(4),
                 close: eurUsdPrice.toFixed(4),
@@ -154,10 +158,10 @@ ATURAN UTAMA (WAJIB DITAATI):
             activeTrade: activeTrade,
             currentPnl: currentPnl,
             tradeHistory: tradeHistory,
-            timestamp: new Date().toLocaleTimeString()
+            timestamp: new Date().toLocaleTimeString('id-ID')
         };
 
-        console.log(`[Autonomous Bot] Harga: $${eurUsdPrice.toFixed(4)} | Keputusan AI: ${actionDecision} | PnL: $${currentPnl.toFixed(2)}`);
+        console.log(`[Orion Trader] Harga: $${eurUsdPrice.toFixed(4)} | Keputusan: ${actionDecision} | PnL: $${currentPnl.toFixed(2)}`);
     } catch (error) {
         console.error("Error autonomous loop:", error.message);
     }
@@ -166,7 +170,7 @@ ATURAN UTAMA (WAJIB DITAATI):
 app.get('/api/start-bot', async (req, res) => {
     if (!isBotRunning) {
         isBotRunning = true;
-        console.log("🤖 Bot Full-Autonomous Diaktifkan.");
+        console.log("🤖 Bot Full-Autonomous Orion (Desmond Wira Mode) Diaktifkan.");
         await runAutonomousForexBot();
         if (botInterval) clearInterval(botInterval);
         botInterval = setInterval(runAutonomousForexBot, 25000);
@@ -189,5 +193,5 @@ app.get('/api/bot-status', (req, res) => {
 });
 
 app.listen(port, () => {
-    console.log(`Server Autonomous Forex berjalan di port ${port}`);
+    console.log(`Server Autonomous Forex Orion berjalan di port ${port}`);
 });
