@@ -183,7 +183,6 @@ async function runAutonomousForexAgent() {
 
                 updateMarketMemory(eurUsdPrice, rsiValue, ema20Value, macdData.status, "AUTO-CLOSE", `Posisi ${trade.type} #${i+1} ditutup (${isTP ? 'TP +$1.50' : 'SL'})`, currentPnl);
                 
-                // Hapus posisi yang sudah diclose dari array
                 activeTrades.splice(i, 1);
             }
         }
@@ -248,7 +247,6 @@ Balas HANYA dengan format JSON MURNI:
         }
 
         // EKSEKUSI 3 POSISI SEKALIGUS (BISA BUY / SELL)
-        // SYARAT MUTLAK: activeTrades.length HARUS 0
         if ((agentDecision.action === "BUY" || agentDecision.action === "SELL") && activeTrades.length === 0 && virtualBalance >= (tradeAmount * 3)) {
             
             for (let i = 0; i < 3; i++) {
@@ -280,6 +278,7 @@ Balas HANYA dengan format JSON MURNI:
 
         if (tradeHistory.length > 25) tradeHistory.pop();
 
+        // BUILD LOGS FOR FRONTEND DASHBOARD
         serverLogs = {
             price: eurUsdPrice.toFixed(4),
             change: parseFloat(forexChange),
@@ -288,6 +287,8 @@ Balas HANYA dengan format JSON MURNI:
             balance: virtualBalance,
             dynamicLot: calculatedLot,
             tradeAllocation: tradeAmount,
+            // DI SINI KUNCI PEMPERBAIKAN TAMPILAN DASHBOARD:
+            activeTrade: activeTrades.length > 0 ? activeTrades[0] : null,
             activeTradesCount: activeTrades.length,
             activeTrades: activeTrades,
             totalCurrentPnl: totalCurrentPnl,
