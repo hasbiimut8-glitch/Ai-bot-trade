@@ -30,7 +30,7 @@ let isBotRunning = false;
 let botInterval = null;
 let isExecutingCycle = false; 
 let virtualBalance = 10000;
-let activeTrades = []; // MENAMPUNG HINGGA 3 POSISI AKTIF
+let activeTrades = []; // MENAMPUNG HINGGA 5 POSISI AKTIF (MODE AGRESIF)
 let tradeHistory = [];
 let priceHistory = [];
 let cycleCount = 0;
@@ -154,7 +154,7 @@ async function runAutonomousForexAgent() {
 
         const { tradeAmount, calculatedLot } = calculateDynamicRisk(virtualBalance);
 
-        // EVALUASI & AUTO-CLOSE UNTUK TIAP POSISI YANG AKTIF
+        // EVALUASI & AUTO-CLOSE UNTUK TIAP POSISI YANG AKTIF (TARGET PROFIT +$1.00)
         let totalCurrentPnl = 0;
         for (let i = activeTrades.length - 1; i >= 0; i--) {
             let trade = activeTrades[i];
@@ -165,30 +165,30 @@ async function runAutonomousForexAgent() {
 
             const dynamicSL = -10 * (trade.lot / 0.10);
 
-            // CLOSE INDIVIDUAL JIKA PROFIT >= $1.50 ATAU KENA SL
-            if (currentPnl >= 1.50 || currentPnl <= dynamicSL) {
-                const isTP = currentPnl >= 1.50;
+            // CLOSE INDIVIDUAL JIKA PROFIT >= $1.00 ATAU KENA SL
+            if (currentPnl >= 1.00 || currentPnl <= dynamicSL) {
+                const isTP = currentPnl >= 1.00;
                 virtualBalance += currentPnl;
                 
                 await executeBrokerOrder("CLOSE", eurUsdPrice);
 
                 tradeHistory.unshift({
                     time: new Date().toLocaleTimeString('id-ID'),
-                    type: `AUTO-CLOSE ${trade.type} (${isTP ? 'TP +$1.50' : 'STOP LOSS'})`,
+                    type: `AUTO-CLOSE ${trade.type} (${isTP ? 'TP +$1.00' : 'STOP LOSS'})`,
                     open: trade.entryPrice.toFixed(4),
                     close: eurUsdPrice.toFixed(4),
                     pnl: currentPnl,
                     balanceAfter: virtualBalance
                 });
 
-                updateMarketMemory(eurUsdPrice, rsiValue, ema20Value, macdData.status, "AUTO-CLOSE", `Posisi ${trade.type} #${i+1} ditutup (${isTP ? 'TP +$1.50' : 'SL'})`, currentPnl);
+                updateMarketMemory(eurUsdPrice, rsiValue, ema20Value, macdData.status, "AUTO-CLOSE", `Posisi ${trade.type} #${i+1} ditutup (${isTP ? 'TP +$1.00' : 'SL'})`, currentPnl);
                 
                 activeTrades.splice(i, 1);
             }
         }
 
         const systemPrompt = `
-Kamu adalah "Orion", Autonomous AI Agent Trading Forex dengan strategi Scalping & Dynamic Money Management ala Desmond Wira.
+Kamu adalah "Orion", Autonomous AI Agent Trading Forex dengan strategi Scalping Agresif & Dynamic Money Management ala Desmond Wira.
 
 KONTEKS MEMORI PASAR (10 SIKLUS TERAKHIR):
 ${JSON.stringify(marketMemory, null, 2)}
@@ -200,11 +200,11 @@ DATA PASAR & RISIKO DINAMIS SAAT INI:
 - Indikator MACD: ${macdData.macd} (${macdData.status})
 - Saldo Akun Terkini: $${virtualBalance.toFixed(2)}
 - Alokasi Risk Dinamis: Modal Per Position $${tradeAmount.toFixed(2)} | Auto-Scaled Lot: ${calculatedLot} Lot
-- Posisi Aktif Saat Ini: ${activeTrades.length > 0 ? `${activeTrades.length} dari 3 posisi aktif terbuka \vert{} Total PnL sementara:$${totalCurrentPnl.toFixed(2)}` : 'TIDAK ADA POSISI (Sistem siap open 3 transaksi)'}
+- Posisi Aktif Saat Ini: ${activeTrades.length > 0 ? `${activeTrades.length} dari 5 posisi aktif terbuka \vert{} Total PnL sementara:$${totalCurrentPnl.toFixed(2)}` : 'TIDAK ADA POSISI (Sistem siap open 5 transaksi)'}
 
 ATURAN ENTRY & EXIT:
 1. JIKA ADA POSISI TERBUKA (${activeTrades.length} posisi aktif):
-   - Selalu keluarkan "HOLD" sampai semua 3 posisi selesai dieksekusi oleh Target Profit ($1.50) / Stop Loss!
+   - Selalu keluarkan "HOLD" sampai semua 5 posisi selesai dieksekusi oleh Target Profit ($1.00) / Stop Loss!
 2. JIKA TIDAK ADA POSISI AKTIF (0 posisi):
    - "BUY": RSI < 45, EMA UPTREND, atau MACD GOLDEN CROSS.
    - "SELL": RSI > 55, EMA DOWNTREND, atau MACD DEATH CROSS.
@@ -246,10 +246,10 @@ Balas HANYA dengan format JSON MURNI:
             agentDecision.reasoning = `Fallback indikator aktif. RSI: ${rsiValue}`;
         }
 
-        // EKSEKUSI 3 POSISI SEKALIGUS (BISA BUY / SELL)
-        if ((agentDecision.action === "BUY" || agentDecision.action === "SELL") && activeTrades.length === 0 && virtualBalance >= (tradeAmount * 3)) {
+        // EKSEKUSI 5 POSISI SEKALIGUS (BUY / SELL)
+        if ((agentDecision.action === "BUY" || agentDecision.action === "SELL") && activeTrades.length === 0 && virtualBalance >= (tradeAmount * 5)) {
             
-            for (let i = 0; i < 3; i++) {
+            for (let i = 0; i < 5; i++) {
                 activeTrades.push({
                     id: Date.now() + i,
                     type: agentDecision.action,
@@ -263,7 +263,7 @@ Balas HANYA dengan format JSON MURNI:
 
             tradeHistory.unshift({
                 time: new Date().toLocaleTimeString('id-ID'),
-                type: `OPEN 3x ${agentDecision.action} (${calculatedLot} Lot x3)`,
+                type: `OPEN 5x ${agentDecision.action} (${calculatedLot} Lot x5)`,
                 open: eurUsdPrice.toFixed(4),
                 close: eurUsdPrice.toFixed(4),
                 pnl: 0,
@@ -282,12 +282,11 @@ Balas HANYA dengan format JSON MURNI:
         serverLogs = {
             price: eurUsdPrice.toFixed(4),
             change: parseFloat(forexChange),
-            analysis: `[3-Position Scalper - Conf: ${(agentDecision.confidence * 100).toFixed(0)}%] ${agentDecision.reasoning}`,
+            analysis: `[5-Position Aggressive Scalper - Conf: ${(agentDecision.confidence * 100).toFixed(0)}%] ${agentDecision.reasoning}`,
             decision: agentDecision.action,
             balance: virtualBalance,
             dynamicLot: calculatedLot,
             tradeAllocation: tradeAmount,
-            // DI SINI KUNCI PEMPERBAIKAN TAMPILAN DASHBOARD:
             activeTrade: activeTrades.length > 0 ? activeTrades[0] : null,
             activeTradesCount: activeTrades.length,
             activeTrades: activeTrades,
@@ -302,7 +301,7 @@ Balas HANYA dengan format JSON MURNI:
             timestamp: new Date().toLocaleTimeString('id-ID')
         };
 
-        console.log(`[Scaled Orion] Balance: $${virtualBalance.toFixed(2)} | Active Trades: ${activeTrades.length}/3 | Action: ${agentDecision.action} | Total PnL: $${totalCurrentPnl.toFixed(2)}`);
+        console.log(`[Scaled Orion] Balance: $${virtualBalance.toFixed(2)} | Active Trades: ${activeTrades.length}/5 | Action: ${agentDecision.action} | Total PnL: $${totalCurrentPnl.toFixed(2)}`);
 
     } catch (error) {
         console.error("Error autonomous agent loop:", error.message);
@@ -315,12 +314,12 @@ Balas HANYA dengan format JSON MURNI:
 app.get('/api/start-bot', async (req, res) => {
     if (!isBotRunning) {
         isBotRunning = true;
-        console.log("⚡ Dynamic 3-Position Scalper AI Agent Orion Diaktifkan.");
+        console.log("⚡ Dynamic 5-Position Aggressive Scalper AI Agent Orion Diaktifkan.");
         await runAutonomousForexAgent();
         if (botInterval) clearInterval(botInterval);
         botInterval = setInterval(runAutonomousForexAgent, 25000);
     }
-    res.json({ success: true, message: "Dynamic Scalper Agent aktif!" });
+    res.json({ success: true, message: "Aggressive Scalper Agent aktif!" });
 });
 
 app.get('/api/stop-bot', (req, res) => {
@@ -338,5 +337,5 @@ app.get('/api/bot-status', (req, res) => {
 });
 
 app.listen(port, () => {
-    console.log(`Dynamic Scalper Forex AI Agent Orion berjalan di port ${port}`);
+    console.log(`Aggressive Scalper Forex AI Agent Orion berjalan di port ${port}`);
 });
