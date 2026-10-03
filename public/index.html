@@ -44,7 +44,7 @@
                     <span>Orion_AI</span>
                     <span class="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-semibold">PRO</span>
                 </h1>
-                <p class="text-[10px] text-gray-400">AI Trading Bot</p>
+                <p class="text-[10px] text-gray-400">AI Scalper Bot</p>
             </div>
         </div>
 
@@ -73,7 +73,7 @@
             <div class="flex justify-between items-center relative z-10">
                 <div class="w-5/12">
                     <h2 class="text-xl font-bold text-white tracking-tight">Halo, Hisam!</h2>
-                    <p class="text-xs text-gray-400 mt-1 leading-relaxed"><span class="text-blue-400 font-semibold">Orion</span> siap memindai chart & mengambil posisi profit otomatis.</p>
+                    <p class="text-xs text-gray-400 mt-1 leading-relaxed"><span class="text-blue-400 font-semibold">Orion</span> siap memindai chart & eksekusi posisi profit otomatis.</p>
                 </div>
 
                 <!-- Robot Orion -->
@@ -125,7 +125,7 @@
                     <span class="text-[11px] text-gray-400 font-medium block">Profit Hari Ini!</span>
                     <div class="flex items-center space-x-1.5 mt-0.5">
                         <span id="todayPnL" class="text-base font-bold text-emerald-400">+$0.00</span>
-                        <span class="text-[10px] text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded font-semibold">(+0.00%)</span>
+                        <span id="profitPercentage" class="text-[10px] text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded font-semibold">(+0.00%)</span>
                     </div>
                 </div>
                 <div>
@@ -165,7 +165,7 @@
                 <button class="flex-1 py-1 text-[11px] font-semibold text-gray-400 hover:text-white rounded-lg transition">1d</button>
             </div>
 
-            <!-- Area Grafik Profesional (Bergerak Saat Bot Dinyalakan) -->
+            <!-- Area Grafik Profesional -->
             <div class="h-32 w-full bg-gray-900/70 rounded-xl border border-gray-800/80 p-2 flex flex-col justify-between relative overflow-hidden">
                 <div class="absolute inset-0 bg-gradient-to-t from-blue-500/10 via-transparent to-transparent pointer-events-none"></div>
                 <div class="flex justify-between text-[10px] text-gray-500 z-10">
@@ -193,6 +193,22 @@
                 </div>
             </div>
 
+            <!-- Bar Indikator Teknikal Real-time -->
+            <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+                <div class="bg-gray-900/80 p-2 rounded-xl border border-gray-800">
+                    <span class="text-[9px] text-gray-400 block font-medium">RSI (14)</span>
+                    <span id="rsiVal" class="text-xs font-bold text-amber-400">50</span>
+                </div>
+                <div class="bg-gray-900/80 p-2 rounded-xl border border-gray-800">
+                    <span class="text-[9px] text-gray-400 block font-medium">EMA (20)</span>
+                    <span id="emaVal" class="text-xs font-bold text-cyan-400">1.0850</span>
+                </div>
+                <div class="bg-gray-900/80 p-2 rounded-xl border border-gray-800">
+                    <span class="text-[9px] text-gray-400 block font-medium">MACD</span>
+                    <span id="macdVal" class="text-[10px] font-bold text-indigo-400 truncate block">NEUTRAL</span>
+                </div>
+            </div>
+
             <!-- Kotak Pikiran AI Orion -->
             <div class="bg-gray-900/90 rounded-xl p-3 border border-blue-500/20 mt-3">
                 <div class="flex items-center justify-between mb-1">
@@ -217,20 +233,25 @@
                 <span class="text-[10px] text-gray-500 block mt-0.5">Siklus Otonom</span>
             </div>
             <div class="glass-card rounded-2xl p-3.5">
-                <div class="flex items-center space-x-2 mb-1">
-                    <div class="w-6 h-6 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs">💳</div>
-                    <span class="text-[11px] text-gray-400 font-medium">Saldo</span>
+                <div class="flex items-center justify-between mb-1">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-6 h-6 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs">💳</div>
+                        <span class="text-[11px] text-gray-400 font-medium">Saldo</span>
+                    </div>
                 </div>
-                <span id="virtualBalance" class="text-base font-bold text-white">$10,000.00</span>
-                <span class="text-[10px] text-blue-400 block mt-0.5">EUR/USD Pool</span>
+                <div class="flex items-baseline justify-between">
+                    <span id="virtualBalance" class="text-base font-bold text-white">$10,000.00</span>
+                    <span id="boxLotBadge" class="text-[9px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-bold border border-blue-500/30">0.10 Lot</span>
+                </div>
+                <span class="text-[10px] text-blue-400 block mt-0.5">Autoscaling Lot</span>
             </div>
             <div class="glass-card rounded-2xl p-3.5">
                 <div class="flex items-center space-x-2 mb-1">
                     <div class="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs">🛡️</div>
                     <span class="text-[11px] text-gray-400 font-medium">Status Risiko</span>
                 </div>
-                <span class="text-base font-bold text-white">Aktif (Agresif)</span>
-                <span class="text-[10px] text-indigo-400 block mt-0.5">Self-Correction</span>
+                <span class="text-base font-bold text-white">Dynamic 5%</span>
+                <span class="text-[10px] text-indigo-400 block mt-0.5">Money Management</span>
             </div>
             <div class="glass-card rounded-2xl p-3.5">
                 <div class="flex items-center space-x-2 mb-1">
@@ -287,7 +308,7 @@
     <script>
         let isRunning = false;
         let startTime = null;
-        let chartPoints = [35, 35, 35, 35, 35, 35, 35, 35, 35, 35]; // Garis awal flat
+        let chartPoints = [35, 35, 35, 35, 35, 35, 35, 35, 35, 35];
 
         function updateChartLine(currentPrice, running) {
             const lineElem = document.getElementById('chartLine');
@@ -296,7 +317,6 @@
 
             if (!running) {
                 chartStatus.innerText = "Grafik Standby";
-                // Garis mendatar stabil saat bot mati
                 const flatPath = `M0,35 L50,35 L100,35 L150,35 L200,35 L250,35 L300,35`;
                 lineElem.setAttribute('d', flatPath);
                 areaElem.setAttribute('d', `${flatPath} L300,60 L0,60 Z`);
@@ -305,16 +325,14 @@
 
             chartStatus.innerText = "Live Real-time Trading";
 
-            // Tambahkan titik harga baru secara dinamis mengikuti fluktuasi harga
             const baseVal = parseFloat(currentPrice) || 1.0850;
-            const randomOffset = (Math.random() - 0.48) * 12; // Sedikit naik turun acak
+            const randomOffset = (Math.random() - 0.48) * 12;
             let newY = 30 + randomOffset;
-            newY = Math.max(10, Math.min(50, newY)); // Batasi dalam kotak chart
+            newY = Math.max(10, Math.min(50, newY));
 
             chartPoints.shift();
             chartPoints.push(newY);
 
-            // Buat jalur SVG mulus berdasarkan array titik chartPoints (10 titik)
             const step = 300 / (chartPoints.length - 1);
             let pathD = `M 0 ${chartPoints[0]}`;
             for (let i = 1; i < chartPoints.length; i++) {
@@ -377,8 +395,30 @@
                 const currentPriceStr = data.price || '1.0850';
                 document.getElementById('marketPrice').innerText = `$${currentPriceStr}`;
                 
-                // Update grafik hanya jika bot aktif berjalan
                 updateChartLine(currentPriceStr, isRunning);
+
+                // Update Indikator Teknikal
+                if (data.indicators) {
+                    document.getElementById('rsiVal').innerText = data.indicators.rsi;
+                    document.getElementById('emaVal').innerText = data.indicators.ema20;
+                    
+                    const macdElem = document.getElementById('macdVal');
+                    if (data.indicators.macdStatus.includes('GOLDEN')) {
+                        macdElem.innerText = 'GOLDEN ⬆';
+                        macdElem.className = 'text-[10px] font-bold text-emerald-400 truncate block';
+                    } else if (data.indicators.macdStatus.includes('DEATH')) {
+                        macdElem.innerText = 'DEATH ⬇';
+                        macdElem.className = 'text-[10px] font-bold text-red-400 truncate block';
+                    } else {
+                        macdElem.innerText = 'NEUTRAL';
+                        macdElem.className = 'text-[10px] font-bold text-indigo-400 truncate block';
+                    }
+                }
+
+                // Update Autoscaling Lot
+                if (data.dynamicLot) {
+                    document.getElementById('boxLotBadge').innerText = `${data.dynamicLot} Lot`;
+                }
 
                 const changeElem = document.getElementById('marketChange');
                 const changeVal = data.change || 0;
@@ -389,18 +429,24 @@
                 document.getElementById('virtualBalance').innerText = `$${balance.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
 
                 const totalProfit = balance - 10000;
+                const profitPct = ((totalProfit / 10000) * 100).toFixed(2);
                 const profitElem = document.getElementById('todayPnL');
+                const profitPctElem = document.getElementById('profitPercentage');
                 const boxProfitElem = document.getElementById('boxTotalProfit');
+                
                 const profitText = `${totalProfit >= 0 ? '+' : ''}$${totalProfit.toFixed(2)}`;
                 profitElem.innerText = profitText;
                 boxProfitElem.innerText = profitText;
+                profitPctElem.innerText = `(${profitPct >= 0 ? '+' : ''}${profitPct}%)`;
+
                 const profitColor = totalProfit >= 0 ? 'text-emerald-400' : 'text-red-400';
                 profitElem.className = `text-base font-bold ${profitColor}`;
                 boxProfitElem.className = `text-base font-bold ${profitColor}`;
 
                 const posIndicator = document.getElementById('activePosIndicator');
                 if (data.activeTrade) {
-                    posIndicator.innerText = `Posisi: ${data.activeTrade.type} ($${(data.currentPnl || 0).toFixed(2)})`;
+                    const tradeLot = data.activeTrade.lot || data.dynamicLot || 0.01;
+                    posIndicator.innerText = `Posisi: ${data.activeTrade.type} (${tradeLot} Lot | $${(data.currentPnl || 0).toFixed(2)})`;
                     posIndicator.className = `text-[10px] font-semibold px-2 py-0.5 rounded border ${data.currentPnl >= 0 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 'text-red-400 bg-red-500/10 border-red-500/20'}`;
                 } else {
                     posIndicator.innerText = "Posisi: Tidak Ada";
