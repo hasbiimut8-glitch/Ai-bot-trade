@@ -8,7 +8,9 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = process.env.PORT || 3000;
-const ai = new GoogleGenAI({ apiKey: 'AQ.Ab8RN6KkAKaKq9epVyDmaL7DPWlj98JlC9kAulmw2TQFimoULA' });
+
+// Gunakan environment variable agar API Key aman & tidak bocor di GitHub
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'PASTE_KEY_KAMU_DI_ENVIRONMENT_VARIABLE' });
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -30,8 +32,8 @@ async function runAutonomousForexBot() {
         const forexData = await forexRes.json();
         let eurUsdPrice = forexData.rates.USD;
         
-        // Tambahkan volatilitas sintetis agar chart bergerak dinamis
-        const marketNoise = (Math.sin(cycleCount * 1.5) * 0.0012) + ((Math.random() - 0.48) * 0.0008);
+        // Tambahkan volatilitas sintetis yang lebih halus
+        const marketNoise = (Math.sin(cycleCount * 1.5) * 0.0004) + ((Math.random() - 0.48) * 0.0003);
         eurUsdPrice += marketNoise;
         const forexChange = (marketNoise * 100).toFixed(2);
 
@@ -40,8 +42,29 @@ async function runAutonomousForexBot() {
         let pnlPercentage = 0;
         if (activeTrade) {
             let priceDiff = (activeTrade.type === "BUY") ? (eurUsdPrice - activeTrade.entryPrice) : (activeTrade.entryPrice - eurUsdPrice);
-            pnlPercentage = (priceDiff / activeTrade.entryPrice) * 100 * 200; // Skala leverage virtual
+            
+            // PERBAIKAN: Leverage disesuaikan ke 10x agar PnL tidak membengkak ribuan dolar
+            pnlPercentage = (priceDiff / activeTrade.entryPrice) * 100 * 10; 
             currentPnl = (activeTrade.amount * pnlPercentage) / 100;
+
+            // HARD PROTECTION: Auto Stop Loss (-$50) & Take Profit (+$100) otomatis di Backend
+            if (currentPnl <= -50 || currentPnl >= 100) {
+                const isSL = currentPnl <= -50;
+                virtualBalance += currentPnl;
+                if (virtualBalance < 0) virtualBalance = 0;
+
+                tradeHistory.unshift({
+                    time: new Date().toLocaleTimeString(),
+                    type: `AUTO-CLOSE (${isSL ? 'STOP LOSS' : 'TAKE PROFIT'})`,
+                    open: activeTrade.entryPrice.toFixed(4),
+                    close: eurUsdPrice.toFixed(4),
+                    pnl: currentPnl,
+                    balanceAfter: virtualBalance
+                });
+                if (tradeHistory.length > 25) tradeHistory.pop();
+                activeTrade = null;
+                console.log(`[Auto-Protection] Posisi ditutup otomatis via ${isSL ? 'Stop Loss' : 'Take Profit'}. PnL: $${currentPnl.toFixed(2)}`);
+            }
         }
 
         // Ambil 3 riwayat transaksi terakhir sebagai "Memori Belajar" Gemini
@@ -55,7 +78,7 @@ Kamu adalah AI Agent Autonomous Trader profesional di pasar Forex (EUR/USD).
 - Status Posisi Kamu Saat Ini: ${activeTrade ? `SEDANG MEMBUKA ${activeTrade.type} di harga $${activeTrade.entryPrice.toFixed(4)} (PnL sementara:$${currentPnl.toFixed(2)})` : 'TIDAK ADA POSISI (Bebas masuk)'}
 - Memori / Riwayat Evaluasi Terakhir: ${recentHistory}
 
-ATURAN UTAMA (WAJIB DITAati):
+ATURAN UTAMA (WAJIB DITAATI):
 1. Bersikaplah **AGRESIF**. Jangan terlalu banyak memilih HOLD kecuali pasar benar-benar stagnan total. Cari peluang cuan setiap ada pergerakan kecil.
 2. Jika KAMU TIDAK ADA POSISI, putuskan secara tegas: ketik "BUY" atau "SELL" di kata pertama untuk membuka posisi baru.
 3. Jika KAMU SEDANG ADA POSISI, evaluasi kinerjamu. Jika sudah untung atau jika tren berbalik merugikan berdasarkan memori evaluasi, kamu BEBAS memutuskan untuk mengetik "CLOSE" di kata pertama untuk menutup posisi, atau biarkan tetap jalan jika masih potensial.
@@ -85,7 +108,7 @@ ATURAN UTAMA (WAJIB DITAati):
         }
 
         // EKSEKUSI KEPUTUSAN OTONOM GEMINI
-        const tradeAmount = 1000;
+        const tradeAmount = 500; // Modal posisi $500 (lebih aman dibanding $1000)
 
         // 1. Jika Gemini memutuskan CLOSE posisi aktif
         if (actionDecision === "CLOSE" && activeTrade) {
@@ -146,7 +169,7 @@ app.get('/api/start-bot', async (req, res) => {
         console.log("🤖 Bot Full-Autonomous Diaktifkan.");
         await runAutonomousForexBot();
         if (botInterval) clearInterval(botInterval);
-        botInterval = setInterval(runAutonomousForexBot, 25000); // Cek tiap 25 detik agar responsif
+        botInterval = setInterval(runAutonomousForexBot, 25000);
     }
     res.json({ success: true, message: "Bot Autonomous aktif!" });
 });
