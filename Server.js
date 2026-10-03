@@ -13,15 +13,15 @@ const port = process.env.PORT || 3000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AQ.Ab8RN6KkAKaKq9epVyDmaL7DPWlj98JlC9kAulmw2TQFimoULA';
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
-// Config untuk Live Broker (MetaApi untuk MT4/MT5 atau OANDA / CCXT)
-const ENABLE_LIVE_BROKER = process.env.ENABLE_LIVE_BROKER === 'true'; // Set 'true' di Railway jika sudah siap Live Trading
+// Config Live Broker (MetaApi untuk MT4/MT5)
+const ENABLE_LIVE_BROKER = process.env.ENABLE_LIVE_BROKER === 'true';
 const META_API_TOKEN = process.env.META_API_TOKEN || 'YOUR_META_API_TOKEN';
 const META_ACCOUNT_ID = process.env.META_ACCOUNT_ID || 'YOUR_META_ACCOUNT_ID';
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 2. STATEFUL AGENT MEMORY ENGINE (Memori Pasar & Status Akun)
+// 2. STATEFUL AGENT MEMORY ENGINE
 let isBotRunning = false;
 let botInterval = null;
 let virtualBalance = 10000;
@@ -43,17 +43,15 @@ function updateMarketMemory(price, rsi, decision, reasoning, pnl) {
         pnl: pnl ? `$${pnl.toFixed(2)}` : '$0.00'
     });
 
-    // Batasi memori agar hanya mengingat 10 konteks pasar terakhir (mencegah token overload)
     if (marketMemory.length > 10) marketMemory.shift();
 }
 
-// 3. BROKER EXECUTION LAYER (Simulasi vs Live Execution MetaTrader/MetaApi)
+// 3. BROKER EXECUTION LAYER (Simulasi vs Live Execution MetaTrader)
 async function executeBrokerOrder(action, price, lotSize = 0.01, slPrice = 0, tpPrice = 0) {
     console.log(`[Agent Action Execution] Executing ${action} Order | Price: $${price} | Lot: ${lotSize}`);
 
     if (ENABLE_LIVE_BROKER) {
         try {
-            // Contoh Integrasi REST API MetaApi untuk MT4/MT5 Account
             const metaApiUrl = `https://mt-client-api-v1.agium.metaapi.cloud/users/current/accounts/${META_ACCOUNT_ID}/trade`;
             const payload = {
                 actionType: action === 'BUY' ? 'ORDER_TYPE_BUY' : (action === 'SELL' ? 'ORDER_TYPE_SELL' : 'ORDER_TYPE_CLOSE_BY'),
@@ -79,12 +77,11 @@ async function executeBrokerOrder(action, price, lotSize = 0.01, slPrice = 0, tp
             console.error('[Live Broker Error]: Gagal eksekusi ke MetaTrader:', err.message);
         }
     } else {
-        // Fallback: Mode Simulation / Paper Trading Local
         console.log('[Paper Trading Engine] Order dieksekusi secara lokal.');
     }
 }
 
-// 4. AUTONOMOUS AGENT MAIN LOOP
+// 4. AUTONOMOUS AGENT MAIN LOOP (SCALPING MODE)
 async function runAutonomousForexAgent() {
     cycleCount++;
     try {
@@ -93,7 +90,7 @@ async function runAutonomousForexAgent() {
         const forexData = await forexRes.json();
         let eurUsdPrice = forexData.rates.USD;
         
-        // Volatilitas sintetis halus untuk simulasi pergerakan intraday
+        // Volatilitas sintetis untuk pergerakan intraday
         const marketNoise = (Math.sin(cycleCount * 1.5) * 0.0004) + ((Math.random() - 0.48) * 0.0003);
         eurUsdPrice += marketNoise;
         const forexChange = (marketNoise * 100).toFixed(2);
@@ -106,12 +103,12 @@ async function runAutonomousForexAgent() {
         let pnlPercentage = 0;
         if (activeTrade) {
             let priceDiff = (activeTrade.type === "BUY") ? (eurUsdPrice - activeTrade.entryPrice) : (activeTrade.entryPrice - eurUsdPrice);
-            pnlPercentage = (priceDiff / activeTrade.entryPrice) * 100 * 10; // Leverage Virtual 10x
+            pnlPercentage = (priceDiff / activeTrade.entryPrice) * 100 * 10; // Virtual Leverage 10x
             currentPnl = (activeTrade.amount * pnlPercentage) / 100;
 
-            // HARD PROTECTION BACKEND: Risk Management (SL -$20 / TP +$30)
-            if (currentPnl <= -20 || currentPnl >= 30) {
-                const isSL = currentPnl <= -20;
+            // HARD SAFETY GUARD (PERAPATAN TARGET): Stop Loss (-$10) & Take Profit (+$15)
+            if (currentPnl <= -10 || currentPnl >= 15) {
+                const isSL = currentPnl <= -10;
                 virtualBalance += currentPnl;
                 
                 await executeBrokerOrder("CLOSE", eurUsdPrice);
@@ -131,9 +128,9 @@ async function runAutonomousForexAgent() {
             }
         }
 
-        // PROMPT STRUCTURED JSON UNTUK GEMINI REASONING ENGINE
+        // PROMPT SCALPER AGENT (CEPAT KUNCI PROFIT)
         const systemPrompt = `
-Kamu adalah "Orion", Autonomous AI Agent Trading Forex profesional kelas dunia berdisiplin tinggi ala Desmond Wira ("Smart Traders Not Gamblers").
+Kamu adalah "Orion", Autonomous AI Agent Trading Forex dengan strategi Scalping Cepat & Disiplin ala Desmond Wira.
 
 KONTEKS MEMORI PASAR (10 SIKLUS TERAKHIR):
 ${JSON.stringify(marketMemory, null, 2)}
@@ -142,28 +139,29 @@ DATA PASAR REALT-IME SAAT INI:
 - Pasangan Mata Uang: EUR/USD
 - Harga Terbaru: $${eurUsdPrice.toFixed(4)} (${parseFloat(forexChange) >= 0 ? '+' : ''}${forexChange}%)
 - Indikator Technical RSI (14): ${rsiValue}
-- Posisi Terbuka Aktif: ${activeTrade ? `JENIS: ${activeTrade.type} | Entry: $${activeTrade.entryPrice.toFixed(4)} \vert{} PnL Berjalan:$${currentPnl.toFixed(2)}` : 'TIDAK ADA POSISI (Bebas mencari setup)'}
+- Posisi Terbuka Aktif: ${activeTrade ? `JENIS: ${activeTrade.type} | Entry: $${activeTrade.entryPrice.toFixed(4)} \vert{} PnL Berjalan:$${currentPnl.toFixed(2)}` : 'TIDAK ADA POSISI (Siap eksekusi setup baru)'}
 - Saldo Akun: $${virtualBalance.toFixed(2)}
 
-TUGAS UTAMA AGEN:
-Analisis memori pasar dan kondisi saat ini secara objektif. Ambil keputusan eksekusi trading yang rasional.
+ATURAN SCALPING CEPAT:
+1. JIKA SEDANG ADA POSISI:
+   - Jika PnL berjalan sudah POSITIF di atas +$3.00, UTAMAKAN KELUARKAN "CLOSE" untuk amankan profit cepat! Jangan ditahan lama-lama.
+   - Jika PnL masih minus tipis tapi RSI berbalik arah, pilih "CLOSE" untuk kurangi risiko.
+2. JIKA TIDAK ADA POSISI:
+   - Cari momentum cepat: Jika RSI < 45 sebutkan "BUY", Jika RSI > 55 sebutkan "SELL". Jika benar-benar datar pilih "HOLD".
 
-ATURAN RESPOS JSON:
-Balas HANYA dengan format JSON MURNI sesuai schema berikut tanpa tambahan teks markdown/pembuka/penutup:
+ATURAN RESPON JSON:
+Balas HANYA dengan format JSON MURNI sesuai schema berikut:
 {
   "action": "BUY" | "SELL" | "CLOSE" | "HOLD",
   "confidence": 0.85,
   "lotSize": 0.01,
-  "stopLossPips": 15,
-  "takeProfitPips": 30,
-  "reasoning": "Penjelasan teknikal singkat berbasis RSI dan aksi sebelumnya (maksimal 2 kalimat)"
+  "reasoning": "Alasan scalping singkat (maksimal 1-2 kalimat)"
 }
 `;
 
         let agentDecision = { action: "HOLD", reasoning: "Memproses analisis...", confidence: 0 };
 
         try {
-            // Panggil Gemini 2.5 Flash dengan JSON Response Mime Type
             const aiResponse = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: systemPrompt,
@@ -173,17 +171,23 @@ Balas HANYA dengan format JSON MURNI sesuai schema berikut tanpa tambahan teks m
             });
 
             if (aiResponse.text) {
-                // Parsing Respon JSON Murni dari Gemini Agent
                 const cleanedJson = aiResponse.text.replace(/```json|```/g, '').trim();
                 agentDecision = JSON.parse(cleanedJson);
             }
         } catch (e) {
             console.warn("[Gemini Agent Error]: Fallback ke logika aman RSI ->", e.message);
-            agentDecision.action = activeTrade ? "HOLD" : (rsiValue < 35 ? "BUY" : (rsiValue > 65 ? "SELL" : "HOLD"));
-            agentDecision.reasoning = `Fallback execution aktif karena kendala pemrosesan AI. RSI: ${rsiValue}`;
+            // Fallback scalping otomatis
+            if (activeTrade && currentPnl >= 3) {
+                agentDecision.action = "CLOSE";
+            } else if (!activeTrade) {
+                agentDecision.action = rsiValue < 45 ? "BUY" : (rsiValue > 55 ? "SELL" : "HOLD");
+            } else {
+                agentDecision.action = "HOLD";
+            }
+            agentDecision.reasoning = `Fallback execution aktif. RSI: ${rsiValue}`;
         }
 
-        const tradeAmount = 500; // Capital allocation per trade
+        const tradeAmount = 500; // Modal per posisi $500
 
         // 5. AGENT ACTION DISPATCHER & EXECUTION
         if (agentDecision.action === "CLOSE" && activeTrade) {
@@ -224,7 +228,6 @@ Balas HANYA dengan format JSON MURNI sesuai schema berikut tanpa tambahan teks m
             updateMarketMemory(eurUsdPrice, rsiValue, agentDecision.action, agentDecision.reasoning, 0);
 
         } else {
-            // Aksi HOLD
             updateMarketMemory(eurUsdPrice, rsiValue, "HOLD", agentDecision.reasoning, currentPnl);
         }
 
@@ -234,7 +237,7 @@ Balas HANYA dengan format JSON MURNI sesuai schema berikut tanpa tambahan teks m
         serverLogs = {
             price: eurUsdPrice.toFixed(4),
             change: parseFloat(forexChange),
-            analysis: `[Confidence: ${(agentDecision.confidence * 100).toFixed(0)}%] ${agentDecision.reasoning}`,
+            analysis: `[Scalping Mode - Conf: ${(agentDecision.confidence * 100).toFixed(0)}%] ${agentDecision.reasoning}`,
             decision: agentDecision.action,
             balance: virtualBalance,
             activeTrade: activeTrade,
@@ -244,7 +247,7 @@ Balas HANYA dengan format JSON MURNI sesuai schema berikut tanpa tambahan teks m
             timestamp: new Date().toLocaleTimeString('id-ID')
         };
 
-        console.log(`[Orion Agent Loop] Price: $${eurUsdPrice.toFixed(4)} | RSI: ${rsiValue} | Action: ${agentDecision.action} | PnL: $${currentPnl.toFixed(2)}`);
+        console.log(`[Scalper Orion] Price: $${eurUsdPrice.toFixed(4)} | RSI: ${rsiValue} | Action: ${agentDecision.action} | PnL: $${currentPnl.toFixed(2)}`);
 
     } catch (error) {
         console.error("Error autonomous agent loop:", error.message);
@@ -255,12 +258,12 @@ Balas HANYA dengan format JSON MURNI sesuai schema berikut tanpa tambahan teks m
 app.get('/api/start-bot', async (req, res) => {
     if (!isBotRunning) {
         isBotRunning = true;
-        console.log("🤖 Autonomous AI Trading Agent Orion (Gemini Engine) Diaktifkan.");
+        console.log("⚡ Autonomous Scalper AI Agent Orion Diaktifkan.");
         await runAutonomousForexAgent();
         if (botInterval) clearInterval(botInterval);
-        botInterval = setInterval(runAutonomousForexAgent, 25000); // Loop tiap 25 detik
+        botInterval = setInterval(runAutonomousForexAgent, 25000);
     }
-    res.json({ success: true, message: "Autonomous AI Agent aktif!" });
+    res.json({ success: true, message: "Scalper Agent aktif!" });
 });
 
 app.get('/api/stop-bot', (req, res) => {
@@ -278,5 +281,5 @@ app.get('/api/bot-status', (req, res) => {
 });
 
 app.listen(port, () => {
-    console.log(`Autonomous Forex AI Agent Orion berjalan di port ${port}`);
+    console.log(`Scalper Forex AI Agent Orion berjalan di port ${port}`);
 });
