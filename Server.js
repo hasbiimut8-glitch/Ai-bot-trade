@@ -9,14 +9,18 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const port = process.env.PORT || 3000;
 
-// 1. CONFIGURATION & GEMINI API KEY
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AQ.Ab8RN6KkAKaKq9epVyDmaL7DPWlj98JlC9kAulmw2TQFimoULA';
+// 1. CONFIGURATION & GEMINI API KEY (PERBAIKAN 1: Tanpa hardcoded API Key)
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+if (!GEMINI_API_KEY) {
+    console.error("FATAL ERROR: GEMINI_API_KEY tidak ditemukan di environment variable!");
+    process.exit(1);
+}
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 // Config Live Broker (MetaApi untuk MT4/MT5)
 const ENABLE_LIVE_BROKER = process.env.ENABLE_LIVE_BROKER === 'true';
-const META_API_TOKEN = process.env.META_API_TOKEN || 'YOUR_META_API_TOKEN';
-const META_ACCOUNT_ID = process.env.META_ACCOUNT_ID || 'YOUR_META_ACCOUNT_ID';
+const META_API_TOKEN = process.env.META_API_TOKEN || '';
+const META_ACCOUNT_ID = process.env.META_ACCOUNT_ID || '';
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -24,6 +28,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // 2. STATEFUL AGENT MEMORY ENGINE
 let isBotRunning = false;
 let botInterval = null;
+let isExecutingCycle = false; // PERBAIKAN 2: Prevent Race Condition
 let virtualBalance = 10000;
 let activeTrade = null;
 let tradeHistory = [];
@@ -34,11 +39,7 @@ let marketMemory = [];
 
 // DYNAMIC MONEY MANAGEMENT ENGINE
 function calculateDynamicRisk(balance) {
-    // Allocation Modal: 5% dari total saldo saat ini (minimal $100 per posisi)
     const tradeAmount = Math.max(100, balance * 0.05);
-
-    // Autoscaling Lot Size: 0.01 Lot per $1,000 Saldo (minimal 0.01 lot)
-    // Contoh: Saldo $10,000 -> 0.10 Lot | Saldo $12,500 -> 0.12 Lot | Saldo $5,000 -> 0.05 Lot
     let calculatedLot = parseFloat((balance / 100000).toFixed(2));
     if (calculatedLot < 0.01) calculatedLot = 0.01;
 
@@ -130,32 +131,33 @@ async function executeBrokerOrder(action, price, lotSize = 0.01, slPrice = 0, tp
 
 // 4. AUTONOMOUS AGENT MAIN LOOP
 async function runAutonomousForexAgent() {
+    // PERBAIKAN 2: Kunci eksekusi jika siklus sebelumnya belum selesai
+    if (isExecutingCycle) {
+        console.log("⏳ Siklus sebelumnya masih berjalan, melewati siklus ini.");
+        return;
+    }
+    isExecutingCycle = true;
+
     cycleCount++;
     try {
-        // Fetch Kurs EUR/USD Real-Time
         const forexRes = await fetch('https://api.exchangerate-api.com/v4/latest/EUR');
         const forexData = await forexRes.json();
         let eurUsdPrice = forexData.rates.USD;
         
-        // Volatilitas sintetis
         const marketNoise = (Math.sin(cycleCount * 1.5) * 0.0004) + ((Math.random() - 0.48) * 0.0003);
         eurUsdPrice += marketNoise;
         const forexChange = (marketNoise * 100).toFixed(2);
 
-        // Update riwayat harga
         priceHistory.push(eurUsdPrice);
         if (priceHistory.length > 50) priceHistory.shift();
 
-        // KALKULASI TEKNIKAL
         const rsiValue = Math.floor(40 + (Math.sin(cycleCount) * 25) + (Math.random() * 10));
         const ema20Value = calculateEMA(priceHistory, 20);
         const macdData = calculateMACD(priceHistory);
         const emaTrend = eurUsdPrice >= ema20Value ? "UPTREND (Bullish)" : "DOWNTREND (Bearish)";
 
-        // KALKULASI RISK MANAGEMENT DINAMIS
         const { tradeAmount, calculatedLot } = calculateDynamicRisk(virtualBalance);
 
-        // Hitung PnL Posisi Aktif
         let currentPnl = 0;
         let pnlPercentage = 0;
         if (activeTrade) {
@@ -163,7 +165,6 @@ async function runAutonomousForexAgent() {
             pnlPercentage = (priceDiff / activeTrade.entryPrice) * 100 * 10;
             currentPnl = (activeTrade.amount * pnlPercentage) / 100;
 
-            // HARD SAFETY GUARD DINAMIS (Disesuaikan skala posisi)
             const dynamicSL = -10 * (activeTrade.lot / 0.10);
             const dynamicTP = 15 * (activeTrade.lot / 0.10);
 
@@ -188,7 +189,7 @@ async function runAutonomousForexAgent() {
             }
         }
 
-        // PROMPT SCALPER DENGAN DYNAMIC MONEY MANAGEMENT
+        // PERBAIKAN 3: Prompt bersih tanpa sintaks artifact \vert{}
         const systemPrompt = `
 Kamu adalah "Orion", Autonomous AI Agent Trading Forex dengan strategi Scalping & Dynamic Money Management ala Desmond Wira.
 
@@ -251,7 +252,6 @@ Balas HANYA dengan format JSON MURNI:
             agentDecision.reasoning = `Fallback indikator aktif. RSI: ${rsiValue}, Lot: ${calculatedLot}`;
         }
 
-        // AGENT ACTION DISPATCHER WITH DYNAMIC ALLOCATION
         if (agentDecision.action === "CLOSE" && activeTrade) {
             virtualBalance += currentPnl;
             await executeBrokerOrder("CLOSE", eurUsdPrice);
@@ -296,7 +296,6 @@ Balas HANYA dengan format JSON MURNI:
 
         if (tradeHistory.length > 25) tradeHistory.pop();
 
-        // BUILD LOGS FOR FRONTEND DASHBOARD
         serverLogs = {
             price: eurUsdPrice.toFixed(4),
             change: parseFloat(forexChange),
@@ -321,10 +320,13 @@ Balas HANYA dengan format JSON MURNI:
 
     } catch (error) {
         console.error("Error autonomous agent loop:", error.message);
+    } finally {
+        // PERBAIKAN 2: Buka kembali kunci status setelah selesai
+        isExecutingCycle = false;
     }
 }
 
-// 7. API ENDPOINTS
+// 5. API ENDPOINTS
 app.get('/api/start-bot', async (req, res) => {
     if (!isBotRunning) {
         isBotRunning = true;
