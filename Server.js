@@ -74,11 +74,11 @@ async function runAutonomousForexBot() {
         // Ambil 3 riwayat transaksi terakhir sebagai memori evaluasi
         const recentHistory = tradeHistory.slice(0, 3).map(h => `${h.type} di ${h.open}, PnL: $${h.pnl ? h.pnl.toFixed(2) : 0}`).join(' | ') || "Belum ada riwayat.";
 
-        // PROMPT DENGAN PERSONA DESMOND WIRA UNTUK HISAM AI
+        // PROMPT PERSONA DESMOND WIRA UNTUK HISAM AI
         const prompt = `
 Kamu adalah "Orion", Full-Time Forex Trader berpengalaman dengan filosofi Desmond Wira ("Smart Traders Not Gamblers").
 
-DATA PASAR REALT-IME:
+DATA PASAR REAL-TIME:
 - EUR/USD Rate: $${eurUsdPrice.toFixed(4)} (${parseFloat(forexChange) >= 0 ? '+' : ''}${forexChange}%)
 - Indikator RSI (14): ${rsiValue} -> Status: ${rsiStatus}
 - Posisi Aktif Saat Ini: ${activeTrade ? `${activeTrade.type} di $${activeTrade.entryPrice.toFixed(4)} (PnL berjalan:$${currentPnl.toFixed(2)})` : 'TIDAK ADA POSISI'}
@@ -86,14 +86,14 @@ DATA PASAR REALT-IME:
 
 ATURAN ENTRY & EXIT DISIPLIN:
 1. Jika TIDAK ADA POSISI:
-   - Jika RSI < 40 (OVERSOLD), utamakan ketik "BUY".
-   - Jika RSI > 60 (OVERBOUGHT), utamakan ketik "SELL".
-   - Jika RSI NEUTRAL (40-60), ketik "HOLD" untuk amankan modal.
+   - Jika RSI < 40 (OVERSOLD), sebutkan kata "BUY".
+   - Jika RSI > 60 (OVERBOUGHT), sebutkan kata "SELL".
+   - Jika RSI NEUTRAL (40-60), sebutkan kata "HOLD" untuk amankan modal.
 2. Jika SEDANG ADA POSISI:
-   - Jika PnL sudah positif/untung, ketik "CLOSE" untuk kuncikan profit.
-   - Jika PnL minus tapi RSI masih mendukung, ketik "HOLD".
+   - Jika PnL sudah positif/untung, sebutkan kata "CLOSE" untuk kuncikan profit.
+   - Jika PnL minus tapi RSI masih mendukung, sebutkan kata "HOLD".
 
-FORMAT Wajib: Kata pertama HARUS salah satu dari: "BUY", "SELL", "CLOSE", atau "HOLD", diikuti titik, lalu berikan 1 kalimat analisis teknikal singkat.
+Sebutkan salah satu kata kunci keputusan utama (BUY, SELL, CLOSE, atau HOLD) dan berikan 1 kalimat analisis teknikal singkat.
 `;
 
         let aiAnalysisText = "Hisam AI memproses analisis...";
@@ -114,18 +114,31 @@ FORMAT Wajib: Kata pertama HARUS salah satu dari: "BUY", "SELL", "CLOSE", atau "
             });
 
             const data = await aiRes.json();
+            console.log("[Hisam AI Response Raw]:", JSON.stringify(data)); // Log respon mentah di Railway
+
             if (data && data.reply) {
                 aiAnalysisText = data.reply;
-                const textUpper = data.reply.toUpperCase().trim();
+                const textUpper = data.reply.toUpperCase();
                 
-                if (textUpper.startsWith("BUY")) actionDecision = "BUY";
-                else if (textUpper.startsWith("SELL")) actionDecision = "SELL";
-                else if (textUpper.startsWith("CLOSE")) actionDecision = "CLOSE";
-                else actionDecision = "HOLD";
+                // PARSING FLEKSIBEL: Cari kata kunci keputusan di seluruh isi teks balasan
+                if (activeTrade && textUpper.includes("CLOSE")) {
+                    actionDecision = "CLOSE";
+                } else if (!activeTrade && textUpper.includes("BUY")) {
+                    actionDecision = "BUY";
+                } else if (!activeTrade && textUpper.includes("SELL")) {
+                    actionDecision = "SELL";
+                } else if (textUpper.includes("HOLD")) {
+                    actionDecision = "HOLD";
+                } else {
+                    // Fallback jika tidak ditemukan kata kunci spesifik
+                    actionDecision = activeTrade ? "HOLD" : (rsiValue < 40 ? "BUY" : (rsiValue > 60 ? "SELL" : "HOLD"));
+                }
+            } else {
+                console.warn("Format respon Hisam AI tidak sesuai:", data);
             }
         } catch (e) {
-            console.warn("Hisam AI Fetch Error:", e.message);
-            actionDecision = activeTrade ? "CLOSE" : (parseFloat(forexChange) >= 0 ? "BUY" : "SELL");
+            console.error("Hisam AI Fetch Error:", e.message);
+            actionDecision = activeTrade ? "HOLD" : (parseFloat(forexChange) >= 0 ? "BUY" : "SELL");
         }
 
         // EKSEKUSI KEPUTUSAN HISAM AI
@@ -178,7 +191,7 @@ FORMAT Wajib: Kata pertama HARUS salah satu dari: "BUY", "SELL", "CLOSE", atau "
             timestamp: new Date().toLocaleTimeString('id-ID')
         };
 
-        console.log(`[Hisam AI Orion] Harga: $${eurUsdPrice.toFixed(4)} | Decision: ${actionDecision} | PnL: $${currentPnl.toFixed(2)}`);
+        console.log(`[Hisam AI Orion] Harga: $${eurUsdPrice.toFixed(4)} | Keputusan: ${actionDecision} | PnL: $${currentPnl.toFixed(2)}`);
     } catch (error) {
         console.error("Error autonomous loop:", error.message);
     }
@@ -190,7 +203,7 @@ app.get('/api/start-bot', async (req, res) => {
         console.log("🤖 Bot Orion berbasis Hisam AI Diaktifkan.");
         await runAutonomousForexBot();
         if (botInterval) clearInterval(botInterval);
-        botInterval = setInterval(runAutonomousForexBot, 25000); // Jalan tiap 25 detik
+        botInterval = setInterval(runAutonomousForexBot, 25000); // Eksekusi tiap 25 detik
     }
     res.json({ success: true, message: "Bot Hisam AI aktif!" });
 });
