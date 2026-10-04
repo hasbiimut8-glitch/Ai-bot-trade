@@ -36,17 +36,17 @@ if (ENABLE_LIVE_BROKER && (!META_API_TOKEN || !META_ACCOUNT_ID)) {
 
 // ================== CONSTANTS (TUNED FOR BTC) ==================
 const LOOP_INTERVAL_MS = 25000;
-const MAX_ACTIVE_TRADES = 3;        // BTC: cukup 3 posisi per siklus
+const MAX_ACTIVE_TRADES = 3;
 const MAX_PRICE_HISTORY = 100;
 const MAX_MARKET_MEMORY = 10;
 const MAX_TRADE_HISTORY = 25;
 
-const RISK_PER_TRADE = 0.05;        // 5% saldo per posisi
-const TAKER_FEE = 0.001;            // 0.1% per sisi
-const SLIPPAGE = 0.0002;            // 0.02% — BTC spread tipis
+const RISK_PER_TRADE = 0.05;
+const TAKER_FEE = 0.001;
+const SLIPPAGE = 0.0002;
 
-const STOP_LOSS_PCT = -0.015;       // −1.5% per posisi (BTC intraday)
-const TAKE_PROFIT_PCT = 0.03;       // +3% per posisi
+const STOP_LOSS_PCT = -0.015;
+const TAKE_PROFIT_PCT = 0.03;
 
 const RSI_PERIOD = 14;
 const EMA_FAST = 12;
@@ -60,7 +60,7 @@ let isBotRunning = false;
 let botInterval = null;
 let isExecutingCycle = false;
 let virtualBalance = 10000;
-let activeTrades = [];      // { id, positionId, type, notional, lot, entryPrice, entryTs }
+let activeTrades = [];
 let tradeHistory = [];
 let priceHistory = [];
 let cycleCount = 0;
@@ -126,11 +126,10 @@ function calculateMACDSeries(prices) {
   return { macd, signal, histogram, status };
 }
 
-// Lot dihitung dari notional / harga → cocok untuk BTC (1 lot = 1 BTC di banyak broker)
 function calculateDynamicRisk(balance, currentPrice) {
   const tradeAmount = Math.max(50, balance * RISK_PER_TRADE);
   let lot = parseFloat((tradeAmount / currentPrice).toFixed(6));
-  if (lot < 0.001) lot = 0.001; // minimum lot tipikal BTC
+  if (lot < 0.001) lot = 0.001;
   return { tradeAmount, calculatedLot: lot };
 }
 
@@ -156,7 +155,7 @@ function computeNetPnl(trade, exitPrice) {
 function updateMarketMemory({ price, rsi, ema, macdStatus, decision, reasoning, pnl }) {
   marketMemory.push({
     time: new Date().toLocaleTimeString('id-ID'),
-    price: price.toFixed(2),          // BTC 2 desimal cukup
+    price: price.toFixed(2),
     rsi: rsi === null ? 'N/A' : rsi.toFixed(2),
     ema: ema.toFixed(2),
     macd: macdStatus,
@@ -339,7 +338,7 @@ async function runAutonomousAgent() {
     priceHistory.push(currentPrice);
     if (priceHistory.length > MAX_PRICE_HISTORY) priceHistory.shift();
 
-    // 3. SL/TP dulu
+    // 3. SL/TP
     await checkStopLossTakeProfit(currentPrice);
 
     // 4. Indikator
@@ -353,13 +352,12 @@ async function runAutonomousAgent() {
     const { tradeAmount, calculatedLot } = calculateDynamicRisk(virtualBalance, currentPrice);
     const totalCurrentPnl = computeUnrealizedPnl(currentPrice);
 
-    // 5. Prompt Gemini (BTC)
+    // ================== PROMPT GEMINI (AGRESIF) ==================
     const systemPrompt = `
-Kamu adalah "Orion", Autonomous AI Trading Agent untuk Bitcoin (${DISPLAY}).
-Kamu memegang kendali penuh untuk membuka (BUY/SELL) dan menutup (CLOSE) posisi.
+Kamu adalah "Orion", Autonomous AI Trading Agent AGRESIF untuk Bitcoin (${DISPLAY}).
+Target: maksimalkan frekuensi entry untuk scalping cepat.
 
 DATA PASAR & POSISI:
-- Symbol: ${DISPLAY}
 - Harga: $${currentPrice.toFixed(2)}
 - RSI (14): ${rsiText}
 - EMA (20): $${ema20Value.toFixed(2)} (${emaTrend})
@@ -368,15 +366,15 @@ DATA PASAR & POSISI:
 - Posisi aktif: ${activeTrades.length} dari ${MAX_ACTIVE_TRADES}
 - Unrealized PnL: $${totalCurrentPnl.toFixed(2)}
 
-ATURAN (BTC intraday, volatilitas menengah):
+ATURAN AGRESIF:
 1. Jika ada posisi aktif:
-   - "CLOSE" jika profit sudah cukup atau tren berbalik.
-   - "HOLD" jika tren masih mendukung.
-2. Jika tidak ada posisi:
-   - "BUY": RSI < 45 ATAU UPTREND ATAU MACD GOLDEN CROSS.
-   - "SELL": RSI > 55 ATAU DOWNTREND ATAU MACD DEATH CROSS.
-   - "HOLD": sinyal tidak jelas.
-3. BTC cenderung trending — jangan overtrading saat sinyal campur.
+   - "CLOSE" SEGERA jika profit ≥ +1.5% atau loss ≤ −1%.
+   - "HOLD" hanya jika tren sangat kuat searah posisi.
+2. Jika TIDAK ada posisi — PRIORITASKAN ENTRY:
+   - "BUY" jika RSI < 55 ATAU MACD histogram positif ATAU harga > EMA20.
+   - "SELL" jika RSI > 45 ATAU MACD histogram negatif ATAU harga < EMA20.
+   - "HOLD" HANYA jika sinyal benar-benar saling bertentangan.
+3. Agresif tapi disiplin: setiap entry harus punya alasan teknikal jelas.
 
 Balas HANYA JSON MURNI:
 {
@@ -385,6 +383,7 @@ Balas HANYA JSON MURNI:
   "reasoning": "maks 2 kalimat"
 }
 `;
+    // ================== END PROMPT ==================
 
     let agentDecision = { action: 'HOLD', reasoning: 'Menunggu sinyal...', confidence: 0 };
     try {
@@ -551,7 +550,7 @@ app.get('/api/start-bot', requireAuth, async (req, res) => {
     if (botInterval) clearInterval(botInterval);
     botInterval = setInterval(runAutonomousAgent, LOOP_INTERVAL_MS);
   }
-  res.json({ success: true, message: 'Orion BTC aktif.' });
+  res.json({ success: true, message: 'Orion BTC (agresif) aktif.' });
 });
 
 app.get('/api/stop-bot', requireAuth, (req, res) => {
@@ -585,7 +584,7 @@ process.on('SIGINT', () => {
 });
 
 app.listen(port, () => {
-  console.log(`Orion BTC Agent berjalan di port ${port}`);
+  console.log(`Orion BTC Agent (AGRESIF) berjalan di port ${port}`);
   console.log(`Live broker: ${ENABLE_LIVE_BROKER ? 'AKTIF ⚠️' : 'simulasi'}`);
   if (!CONTROL_API_KEY) console.warn('[WARN] CONTROL_API_KEY tidak diset — endpoint kontrol terbuka!');
 });
