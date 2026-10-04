@@ -157,7 +157,104 @@ body {
   100% { opacity: 0; transform: translateY(-8px); }
 }
 
-/* ==================== WORKFLOW CANVAS (opsional, legacy) ==================== */
+/* ==================== SPEECH BUBBLE ==================== */
+.speech-bubble {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #ffffff;
+  color: #1a1a1a;
+  padding: 8px 14px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35), 0 0 0 2px rgba(247,147,26,0.4);
+  z-index: 20;
+  opacity: 1;
+  animation: bubblePop 0.35s ease-out;
+  max-width: 90%;
+  text-align: center;
+  transition: opacity 0.3s ease;
+}
+
+.speech-bubble.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) scale(0.7);
+}
+
+.speech-bubble-tail {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 10px solid #ffffff;
+  filter: drop-shadow(0 2px 0 rgba(247,147,26,0.4));
+}
+
+.speech-bubble.bubble-happy {
+  background: linear-gradient(135deg, #ffd89e, #ffb84d);
+  color: #4a2800;
+  box-shadow: 0 8px 24px rgba(247,147,26,0.5), 0 0 0 2px rgba(247,147,26,0.7);
+}
+.speech-bubble.bubble-happy .speech-bubble-tail {
+  border-top-color: #ffb84d;
+  filter: none;
+}
+
+.speech-bubble.bubble-sad {
+  background: linear-gradient(135deg, #cfd8e3, #9aa8bb);
+  color: #1c2a3a;
+  box-shadow: 0 8px 24px rgba(96,165,250,0.4), 0 0 0 2px rgba(96,165,250,0.6);
+}
+.speech-bubble.bubble-sad .speech-bubble-tail {
+  border-top-color: #9aa8bb;
+  filter: none;
+}
+
+@keyframes bubblePop {
+  0%   { transform: translateX(-50%) scale(0.4); opacity: 0; }
+  60%  { transform: translateX(-50%) scale(1.1); opacity: 1; }
+  100% { transform: translateX(-50%) scale(1); }
+}
+
+/* ==================== FACE EXPRESSIONS ==================== */
+.robot-3d-scene .face-happy,
+.robot-3d-scene .face-sad {
+  display: none;
+}
+
+.robot-3d-scene.robot-happy .face-normal { display: none; }
+.robot-3d-scene.robot-happy .face-happy  { display: block; }
+.robot-3d-scene.robot-happy {
+  animation: happyBounce 0.55s infinite ease-in-out;
+}
+
+.robot-3d-scene.robot-sad .face-normal { display: none; }
+.robot-3d-scene.robot-sad .face-sad    { display: block; }
+.robot-3d-scene.robot-sad {
+  animation: sadSway 2.2s infinite ease-in-out;
+}
+
+@keyframes happyBounce {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  25%      { transform: translateY(-6px) rotate(1deg); }
+  50%      { transform: translateY(-2px) rotate(-1.5deg); }
+  75%      { transform: translateY(-5px) rotate(1deg); }
+}
+
+@keyframes sadSway {
+  0%, 100% { transform: translateY(0) rotate(-1.2deg); }
+  50%      { transform: translateY(2px) rotate(1.2deg); }
+}
+
+/* ==================== WORKFLOW CANVAS (legacy) ==================== */
 .workflow-canvas {
   position: relative;
   background: #0b0f19;
