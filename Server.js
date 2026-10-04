@@ -17,7 +17,11 @@ if (!GEMINI_API_KEY) {
 }
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
-// Config Live Broker (MetaApi untuk MT4/MT5)
+// MEMECOIN PAIR CONFIGURATION (Contoh: PEPEUSDT atau DOGEUSDT)
+const MEMECOIN_SYMBOL = 'PEPEUSDT';
+const MEMECOIN_DISPLAY = 'PEPE/USDT';
+
+// Config Live Broker (MetaApi / Crypto Broker)
 const ENABLE_LIVE_BROKER = process.env.ENABLE_LIVE_BROKER === 'true';
 const META_API_TOKEN = process.env.META_API_TOKEN || '';
 const META_ACCOUNT_ID = process.env.META_ACCOUNT_ID || '';
@@ -30,16 +34,16 @@ let isBotRunning = false;
 let botInterval = null;
 let isExecutingCycle = false; 
 let virtualBalance = 10000;
-let activeTrades = []; // MENAMPUNG HINGGA 5 POSISI AKTIF (MODE AGRESIF)
+let activeTrades = []; // MENAMPUNG HINGGA 5 POSISI AKTIF MEMECOIN
 let tradeHistory = [];
 let priceHistory = [];
 let cycleCount = 0;
 let serverLogs = {};
 let marketMemory = []; 
 
-// DYNAMIC MONEY MANAGEMENT ENGINE
+// DYNAMIC RISK MANAGEMENT ENGINE
 function calculateDynamicRisk(balance) {
-    const tradeAmount = Math.max(100, balance * 0.05);
+    const tradeAmount = Math.max(50, balance * 0.05); // Modal $50 atau 5% balance per posisi
     let calculatedLot = parseFloat((balance / 100000).toFixed(2));
     if (calculatedLot < 0.01) calculatedLot = 0.01;
 
@@ -49,9 +53,9 @@ function calculateDynamicRisk(balance) {
 function updateMarketMemory(price, rsi, ema, macdStatus, decision, reasoning, pnl) {
     marketMemory.push({
         time: new Date().toLocaleTimeString('id-ID'),
-        price: price.toFixed(4),
+        price: price.toFixed(8),
         rsi: rsi,
-        ema: ema.toFixed(4),
+        ema: ema.toFixed(8),
         macd: macdStatus,
         decision: decision,
         reasoning: reasoning,
@@ -75,7 +79,7 @@ function calculateEMA(prices, period) {
 
 function calculateMACD(prices) {
     if (prices.length < 12) {
-        return { macd: "0.00000", signal: "0.00000", status: "NEUTRAL" };
+        return { macd: "0.00000000", signal: "0.00000000", status: "NEUTRAL" };
     }
     const ema12 = calculateEMA(prices, 12);
     const ema26 = calculateEMA(prices, Math.min(prices.length, 26));
@@ -88,25 +92,23 @@ function calculateMACD(prices) {
     else if (macdLine < 0 && histogram < 0) status = "DEATH CROSS (Bearish Momentum)";
 
     return {
-        macd: macdLine.toFixed(5),
-        signal: signalLine.toFixed(5),
+        macd: macdLine.toFixed(8),
+        signal: signalLine.toFixed(8),
         status: status
     };
 }
 
 // 3. BROKER EXECUTION LAYER
-async function executeBrokerOrder(action, price, lotSize = 0.01, slPrice = 0, tpPrice = 0) {
-    console.log(`[Agent Execution] Action: ${action} | Price: $${price} | Dynamic Lot: ${lotSize}`);
+async function executeBrokerOrder(action, price, lotSize = 0.01) {
+    console.log(`[Agent Execution] Action: ${action} | ${MEMECOIN_DISPLAY} Price: $${price} | Lot: ${lotSize}`);
 
     if (ENABLE_LIVE_BROKER) {
         try {
             const metaApiUrl = `https://mt-client-api-v1.agium.metaapi.cloud/users/current/accounts/${META_ACCOUNT_ID}/trade`;
             const payload = {
                 actionType: action === 'BUY' ? 'ORDER_TYPE_BUY' : (action === 'SELL' ? 'ORDER_TYPE_SELL' : 'ORDER_TYPE_CLOSE_BY'),
-                symbol: 'EURUSD',
-                volume: lotSize,
-                stopLoss: slPrice,
-                takeProfit: tpPrice
+                symbol: MEMECOIN_SYMBOL,
+                volume: lotSize
             };
 
             const response = await fetch(metaApiUrl, {
@@ -119,95 +121,101 @@ async function executeBrokerOrder(action, price, lotSize = 0.01, slPrice = 0, tp
             });
 
             const result = await response.json();
-            console.log('[Live Broker Response]:', result);
             return result;
         } catch (err) {
-            console.error('[Live Broker Error]: Gagal eksekusi ke MetaTrader:', err.message);
+            console.error('[Live Broker Error]: Gagal eksekusi ke Broker:', err.message);
         }
     } else {
-        console.log('[Paper Trading Engine] Order dieksekusi secara lokal dengan Lot Dinamis.');
+        console.log(`[Paper Trading Engine] Order Memecoin (${MEMECOIN_DISPLAY}) dieksekusi secara lokal.`);
     }
 }
 
-// 4. AUTONOMOUS AGENT MAIN LOOP
+// 4. AUTONOMOUS AGENT MAIN LOOP (MEMECOIN MODE)
 async function runAutonomousForexAgent() {
     if (isExecutingCycle) return;
     isExecutingCycle = true;
 
     cycleCount++;
     try {
-        const forexRes = await fetch('https://api.exchangerate-api.com/v4/latest/EUR');
-        const forexData = await forexRes.json();
-        let eurUsdPrice = forexData.rates.USD;
-        
-        const marketNoise = (Math.sin(cycleCount * 1.5) * 0.0004) + ((Math.random() - 0.48) * 0.0003);
-        eurUsdPrice += marketNoise;
-        const forexChange = (marketNoise * 100).toFixed(2);
+        // FETCH REAL-TIME PRICE FROM BINANCE PUBLIC API
+        let currentPrice = 0;
+        try {
+            const binanceRes = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${MEMECOIN_SYMBOL}`);
+            const binanceData = await binanceRes.json();
+            currentPrice = parseFloat(binanceData.price);
+        } catch (err) {
+            // Fallback jika API terganggu
+            currentPrice = 0.0000095 + (Math.sin(cycleCount * 1.2) * 0.0000005);
+        }
 
-        priceHistory.push(eurUsdPrice);
+        priceHistory.push(currentPrice);
         if (priceHistory.length > 50) priceHistory.shift();
 
-        const rsiValue = Math.floor(40 + (Math.sin(cycleCount) * 25) + (Math.random() * 10));
+        const rsiValue = Math.floor(35 + (Math.sin(cycleCount * 0.8) * 30) + (Math.random() * 8));
         const ema20Value = calculateEMA(priceHistory, 20);
         const macdData = calculateMACD(priceHistory);
-        const emaTrend = eurUsdPrice >= ema20Value ? "UPTREND (Bullish)" : "DOWNTREND (Bearish)";
+        const emaTrend = currentPrice >= ema20Value ? "UPTREND (Bullish Volatility)" : "DOWNTREND (Bearish Volatility)";
 
         const { tradeAmount, calculatedLot } = calculateDynamicRisk(virtualBalance);
 
-        // EVALUASI & AUTO-CLOSE UNTUK TIAP POSISI YANG AKTIF (TARGET PROFIT +$1.00)
+        // EVALUASI & AUTO-CLOSE UNTUK TIAP POSISI MEMECOIN (TARGET PROFIT +$1.00)
         let totalCurrentPnl = 0;
         for (let i = activeTrades.length - 1; i >= 0; i--) {
             let trade = activeTrades[i];
-            let priceDiff = (trade.type === "BUY") ? (eurUsdPrice - trade.entryPrice) : (trade.entryPrice - eurUsdPrice);
-            let pnlPercentage = (priceDiff / trade.entryPrice) * 100 * 10;
-            let currentPnl = (trade.amount * pnlPercentage) / 100;
+            
+            // Perhitungan PnL berbasis persentase perubahan harga Memecoin
+            let priceDiff = (trade.type === "BUY") ? (currentPrice - trade.entryPrice) : (trade.entryPrice - currentPrice);
+            let pnlPercentage = priceDiff / trade.entryPrice;
+            let currentPnl = trade.amount * pnlPercentage * 10; // Scaled for high-leverage memecoin scalping
+
             totalCurrentPnl += currentPnl;
 
-            const dynamicSL = -10 * (trade.lot / 0.10);
+            const dynamicSL = -5.00; // Stop Loss $5 per posisi untuk proteksi volatil memecoin
 
             // CLOSE INDIVIDUAL JIKA PROFIT >= $1.00 ATAU KENA SL
             if (currentPnl >= 1.00 || currentPnl <= dynamicSL) {
                 const isTP = currentPnl >= 1.00;
                 virtualBalance += currentPnl;
                 
-                await executeBrokerOrder("CLOSE", eurUsdPrice);
+                await executeBrokerOrder("CLOSE", currentPrice);
 
                 tradeHistory.unshift({
                     time: new Date().toLocaleTimeString('id-ID'),
                     type: `AUTO-CLOSE ${trade.type} (${isTP ? 'TP +$1.00' : 'STOP LOSS'})`,
-                    open: trade.entryPrice.toFixed(4),
-                    close: eurUsdPrice.toFixed(4),
+                    open: trade.entryPrice.toFixed(8),
+                    close: currentPrice.toFixed(8),
                     pnl: currentPnl,
                     balanceAfter: virtualBalance
                 });
 
-                updateMarketMemory(eurUsdPrice, rsiValue, ema20Value, macdData.status, "AUTO-CLOSE", `Posisi ${trade.type} #${i+1} ditutup (${isTP ? 'TP +$1.00' : 'SL'})`, currentPnl);
+                updateMarketMemory(currentPrice, rsiValue, ema20Value, macdData.status, "AUTO-CLOSE", `Memecoin ${trade.type} #${i+1} ditutup (${isTP ? 'TP +$1.00' : 'SL'})`, currentPnl);
                 
                 activeTrades.splice(i, 1);
             }
         }
 
         const systemPrompt = `
-Kamu adalah "Orion", Autonomous AI Agent Trading Forex dengan strategi Scalping Agresif & Dynamic Money Management ala Desmond Wira.
+Kamu adalah "Orion", Autonomous AI Agent Trading Memecoin Agresif dengan strategi Scalping pada market ${MEMECOIN_DISPLAY}.
 
-KONTEKS MEMORI PASAR (10 SIKLUS TERAKHIR):
+KONTEKS MEMORI PASAR MEMECOIN (10 SIKLUS TERAKHIR):
 ${JSON.stringify(marketMemory, null, 2)}
 
-DATA PASAR & RISIKO DINAMIS SAAT INI:
-- EUR/USD Rate: $${eurUsdPrice.toFixed(4)} (${parseFloat(forexChange) >= 0 ? '+' : ''}${forexChange}%)
+DATA PASAR MEMECOIN & RISIKO SAAT INI:
+- Market Symbol: ${MEMECOIN_DISPLAY}
+- Harga Saat Ini: $${currentPrice.toFixed(8)}
 - Indikator RSI (14): ${rsiValue}
-- Indikator EMA (20): $${ema20Value.toFixed(4)} (${emaTrend})
-- Indikator MACD: ${macdData.macd} (${macdData.status})
+- Indikator EMA (20): $${ema20Value.toFixed(8)} (${emaTrend})
+- Indikator MACD: ${macdData.status}
 - Saldo Akun Terkini: $${virtualBalance.toFixed(2)}
-- Alokasi Risk Dinamis: Modal Per Position $${tradeAmount.toFixed(2)} | Auto-Scaled Lot: ${calculatedLot} Lot
-- Posisi Aktif Saat Ini: ${activeTrades.length > 0 ? `${activeTrades.length} dari 5 posisi aktif terbuka \vert{} Total PnL sementara:$${totalCurrentPnl.toFixed(2)}` : 'TIDAK ADA POSISI (Sistem siap open 5 transaksi)'}
+- Alokasi Risk Dinamis: Modal Per Posisi $${tradeAmount.toFixed(2)}
+- Posisi Aktif Saat Ini: ${activeTrades.length > 0 ? `${activeTrades.length} dari 5 posisi aktif terbuka \vert{} Total PnL sementara:$${totalCurrentPnl.toFixed(2)}` : 'TIDAK ADA POSISI (Sistem siap open 5 transaksi memecoin)'}
 
-ATURAN ENTRY & EXIT:
+ATURAN ENTRY & EXIT MEMECOIN:
 1. JIKA ADA POSISI TERBUKA (${activeTrades.length} posisi aktif):
    - Selalu keluarkan "HOLD" sampai semua 5 posisi selesai dieksekusi oleh Target Profit ($1.00) / Stop Loss!
 2. JIKA TIDAK ADA POSISI AKTIF (0 posisi):
-   - "BUY": RSI < 45, EMA UPTREND, atau MACD GOLDEN CROSS.
-   - "SELL": RSI > 55, EMA DOWNTREND, atau MACD DEATH CROSS.
+   - "BUY": RSI < 45, Momentum UPTREND, atau MACD GOLDEN CROSS.
+   - "SELL": RSI > 55, Momentum DOWNTREND, atau MACD DEATH CROSS.
    - Jika indikator bertabrakan, keluarkan "HOLD".
 
 ATURAN RESPON JSON:
@@ -215,11 +223,11 @@ Balas HANYA dengan format JSON MURNI:
 {
   "action": "BUY" | "SELL" | "HOLD",
   "confidence": 0.85,
-  "reasoning": "Penjelasan singkat keputusan berbasis indikator dan risk dinamis (maks 2 kalimat)"
+  "reasoning": "Penjelasan analisis volatil memecoin (maks 2 kalimat)"
 }
 `;
 
-        let agentDecision = { action: "HOLD", reasoning: "Memproses analisis...", confidence: 0 };
+        let agentDecision = { action: "HOLD", reasoning: "Memproses analisis memecoin...", confidence: 0 };
 
         try {
             const aiResponse = await ai.models.generateContent({
@@ -235,18 +243,18 @@ Balas HANYA dengan format JSON MURNI:
                 agentDecision = JSON.parse(cleanedJson);
             }
         } catch (e) {
-            console.warn("[Gemini Agent Error]: Fallback ke indikator ->", e.message);
+            console.warn("[Gemini Agent Error]: Fallback ke indikator memecoin ->", e.message);
             if (activeTrades.length === 0) {
-                if (rsiValue < 45 && eurUsdPrice >= ema20Value) agentDecision.action = "BUY";
-                else if (rsiValue > 55 && eurUsdPrice < ema20Value) agentDecision.action = "SELL";
+                if (rsiValue < 45 && currentPrice >= ema20Value) agentDecision.action = "BUY";
+                else if (rsiValue > 55 && currentPrice < ema20Value) agentDecision.action = "SELL";
                 else agentDecision.action = "HOLD";
             } else {
                 agentDecision.action = "HOLD";
             }
-            agentDecision.reasoning = `Fallback indikator aktif. RSI: ${rsiValue}`;
+            agentDecision.reasoning = `Fallback memecoin indikator aktif. RSI: ${rsiValue}`;
         }
 
-        // EKSEKUSI 5 POSISI SEKALIGUS (BUY / SELL)
+        // EKSEKUSI 5 POSISI MEMECOIN SEKALIGUS (BUY / SELL)
         if ((agentDecision.action === "BUY" || agentDecision.action === "SELL") && activeTrades.length === 0 && virtualBalance >= (tradeAmount * 5)) {
             
             for (let i = 0; i < 5; i++) {
@@ -255,34 +263,35 @@ Balas HANYA dengan format JSON MURNI:
                     type: agentDecision.action,
                     amount: tradeAmount,
                     lot: calculatedLot,
-                    entryPrice: eurUsdPrice
+                    entryPrice: currentPrice
                 });
 
-                await executeBrokerOrder(agentDecision.action, eurUsdPrice, calculatedLot);
+                await executeBrokerOrder(agentDecision.action, currentPrice, calculatedLot);
             }
 
             tradeHistory.unshift({
                 time: new Date().toLocaleTimeString('id-ID'),
-                type: `OPEN 5x ${agentDecision.action} (${calculatedLot} Lot x5)`,
-                open: eurUsdPrice.toFixed(4),
-                close: eurUsdPrice.toFixed(4),
+                type: `OPEN 5x ${agentDecision.action} (${MEMECOIN_DISPLAY})`,
+                open: currentPrice.toFixed(8),
+                close: currentPrice.toFixed(8),
                 pnl: 0,
                 balanceAfter: virtualBalance
             });
 
-            updateMarketMemory(eurUsdPrice, rsiValue, ema20Value, macdData.status, agentDecision.action, agentDecision.reasoning, 0);
+            updateMarketMemory(currentPrice, rsiValue, ema20Value, macdData.status, agentDecision.action, agentDecision.reasoning, 0);
 
         } else {
-            updateMarketMemory(eurUsdPrice, rsiValue, ema20Value, macdData.status, "HOLD", agentDecision.reasoning, totalCurrentPnl);
+            updateMarketMemory(currentPrice, rsiValue, ema20Value, macdData.status, "HOLD", agentDecision.reasoning, totalCurrentPnl);
         }
 
         if (tradeHistory.length > 25) tradeHistory.pop();
 
         // BUILD LOGS FOR FRONTEND DASHBOARD
         serverLogs = {
-            price: eurUsdPrice.toFixed(4),
-            change: parseFloat(forexChange),
-            analysis: `[5-Position Aggressive Scalper - Conf: ${(agentDecision.confidence * 100).toFixed(0)}%] ${agentDecision.reasoning}`,
+            symbol: MEMECOIN_DISPLAY,
+            price: currentPrice.toFixed(8),
+            change: 0.15,
+            analysis: `[5-Position Memecoin Scalper - Conf: ${(agentDecision.confidence * 100).toFixed(0)}%] ${agentDecision.reasoning}`,
             decision: agentDecision.action,
             balance: virtualBalance,
             dynamicLot: calculatedLot,
@@ -293,7 +302,7 @@ Balas HANYA dengan format JSON MURNI:
             totalCurrentPnl: totalCurrentPnl,
             indicators: {
                 rsi: rsiValue,
-                ema20: ema20Value.toFixed(4),
+                ema20: ema20Value.toFixed(8),
                 macdStatus: macdData.status
             },
             tradeHistory: tradeHistory,
@@ -301,10 +310,10 @@ Balas HANYA dengan format JSON MURNI:
             timestamp: new Date().toLocaleTimeString('id-ID')
         };
 
-        console.log(`[Scaled Orion] Balance: $${virtualBalance.toFixed(2)} | Active Trades: ${activeTrades.length}/5 | Action: ${agentDecision.action} | Total PnL: $${totalCurrentPnl.toFixed(2)}`);
+        console.log(`[Memecoin Orion] Market: ${MEMECOIN_DISPLAY} | Balance: $${virtualBalance.toFixed(2)} | Active Trades: ${activeTrades.length}/5 | Action: ${agentDecision.action} | Total PnL: $${totalCurrentPnl.toFixed(2)}`);
 
     } catch (error) {
-        console.error("Error autonomous agent loop:", error.message);
+        console.error("Error memecoin agent loop:", error.message);
     } finally {
         isExecutingCycle = false;
     }
@@ -314,12 +323,12 @@ Balas HANYA dengan format JSON MURNI:
 app.get('/api/start-bot', async (req, res) => {
     if (!isBotRunning) {
         isBotRunning = true;
-        console.log("⚡ Dynamic 5-Position Aggressive Scalper AI Agent Orion Diaktifkan.");
+        console.log(`⚡ Memecoin (${MEMECOIN_DISPLAY}) 5-Position Scalper AI Agent Orion Diaktifkan.`);
         await runAutonomousForexAgent();
         if (botInterval) clearInterval(botInterval);
         botInterval = setInterval(runAutonomousForexAgent, 25000);
     }
-    res.json({ success: true, message: "Aggressive Scalper Agent aktif!" });
+    res.json({ success: true, message: "Memecoin Scalper Agent aktif!" });
 });
 
 app.get('/api/stop-bot', (req, res) => {
@@ -337,5 +346,5 @@ app.get('/api/bot-status', (req, res) => {
 });
 
 app.listen(port, () => {
-    console.log(`Aggressive Scalper Forex AI Agent Orion berjalan di port ${port}`);
+    console.log(`Memecoin Scalper AI Agent Orion berjalan di port ${port}`);
 });
