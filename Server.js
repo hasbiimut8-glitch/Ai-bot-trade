@@ -388,7 +388,7 @@ Balas HANYA JSON MURNI:
     let agentDecision = { action: 'HOLD', reasoning: 'Menunggu sinyal...', confidence: 0 };
     try {
       const aiResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash',
         contents: systemPrompt,
         config: { responseMimeType: 'application/json' }
       });
