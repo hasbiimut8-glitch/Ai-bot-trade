@@ -4,6 +4,7 @@ let startTime = null;
 let pollInterval = null;
 let tradingChart = null;
 let lastFetchOk = true;
+let lastSeenCloseTs = 0;
 
 // ==================== UTILITIES ====================
 function fmtUsd(n, decimals = 2) {
@@ -26,6 +27,48 @@ function showToast(msg, type = 'error') {
   toast.classList.remove('hidden');
   clearTimeout(showToast._t);
   showToast._t = setTimeout(() => toast.classList.add('hidden'), 2500);
+}
+
+// ==================== EMOTION TRIGGER ====================
+function triggerEmotion(type, message) {
+  const bubble = document.getElementById('speechBubble');
+  const bubbleText = document.getElementById('speechText');
+  const svg = document.querySelector('.robot-3d-scene');
+  if (!bubble || !bubbleText || !svg) return;
+
+  svg.classList.remove('robot-happy', 'robot-sad');
+  bubble.classList.remove('bubble-happy', 'bubble-sad', 'hidden');
+
+  if (type === 'PROFIT') {
+    svg.classList.add('robot-happy');
+    bubble.classList.add('bubble-happy');
+  } else {
+    svg.classList.add('robot-sad');
+    bubble.classList.add('bubble-sad');
+  }
+
+  bubbleText.innerText = message || (type === 'PROFIT'
+    ? 'Horee!!! Berhasil profit'
+    : 'Yaah!! Gagal nih aku coba lagi ya');
+
+  // Restart animasi pop
+  bubble.style.animation = 'none';
+  void bubble.offsetWidth;
+  bubble.style.animation = '';
+
+  clearTimeout(triggerEmotion._t);
+  triggerEmotion._t = setTimeout(() => {
+    bubble.classList.add('hidden');
+    svg.classList.remove('robot-happy', 'robot-sad');
+  }, 5000);
+}
+
+function checkCloseEvent(d) {
+  if (!d || !d.lastCloseEvent) return;
+  const evt = d.lastCloseEvent;
+  if (evt.timestamp === lastSeenCloseTs) return;
+  lastSeenCloseTs = evt.timestamp;
+  triggerEmotion(evt.type, evt.message);
 }
 
 // ==================== CHART.JS INIT ====================
@@ -89,8 +132,10 @@ function updateLiveChart(newPrice) {
 const toggleBtn = document.getElementById('toggleBtn');
 toggleBtn?.addEventListener('click', async () => {
   const endpoint = isRunning ? '/api/stop-bot' : '/api/start-bot';
+  const key = localStorage.getItem('controlKey') || '';
+  const url = key ? `${endpoint}?key=${encodeURIComponent(key)}` : endpoint;
   try {
-    const res = await fetch(endpoint);
+    const res = await fetch(url);
     const json = await res.json();
     if (json.success) {
       showToast(json.message || 'OK', 'success');
@@ -332,6 +377,9 @@ function renderData(d) {
   // Last update
   const lu = document.getElementById('lastUpdate');
   if (lu && d.timestamp) lu.innerText = d.timestamp;
+
+  // 🔥 Emotion reaction
+  checkCloseEvent(d);
 }
 
 // ==================== RENDER: ACTIVE TRADES ====================
