@@ -12,7 +12,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* ==================== GLOW EFFECTS ==================== */
+/* ==================== GLOW ==================== */
 .glow-blue   { box-shadow: 0 0 35px rgba(59, 130, 246, 0.25); }
 .glow-green  { box-shadow: 0 0 20px rgba(16, 185, 129, 0.2); }
 .glow-orange { box-shadow: 0 0 25px rgba(247, 147, 26, 0.25); }
@@ -30,7 +30,7 @@ body {
   border: 1px solid rgba(107, 114, 128, 0.3);
 }
 
-/* ==================== NAV BUTTON ==================== */
+/* ==================== NAV ==================== */
 .nav-btn {
   display: flex;
   flex-direction: column;
@@ -41,30 +41,6 @@ body {
 }
 .nav-btn:hover { color: #ffffff; }
 .nav-btn-active { color: #f7931a; }
-
-/* ==================== ANIMATIONS ==================== */
-@keyframes robotFloat {
-  0%, 100% { transform: translateY(0) rotate(0); }
-  50% { transform: translateY(-6px) rotate(1deg); }
-}
-@keyframes eyeLaser {
-  0%, 100% { opacity: 1; filter: drop-shadow(0 0 8px #f7931a); }
-  50% { opacity: 0.4; filter: drop-shadow(0 0 2px #f7931a); }
-}
-@keyframes dataScan {
-  0% { transform: translateY(-20px); opacity: 0; }
-  50% { opacity: 1; }
-  100% { transform: translateY(20px); opacity: 0; }
-}
-@keyframes pulseDot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
-
-.robot-animated { animation: robotFloat 3.5s infinite ease-in-out; }
-.robot-eye      { animation: eyeLaser 1.6s infinite ease-in-out; }
-.scan-line      { animation: dataScan 2s infinite linear; }
-.pulse-dot      { animation: pulseDot 1.4s infinite ease-in-out; }
 
 /* ==================== SCROLLBAR ==================== */
 .no-scrollbar::-webkit-scrollbar { width: 4px; }
@@ -88,7 +64,100 @@ body {
   transform: translateX(-50%) translateY(-10px);
 }
 
-/* ==================== WORKFLOW CANVAS (opsional, dari versi lama) ==================== */
+/* ==================== COMMON ANIMATIONS ==================== */
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+.pulse-dot { animation: pulseDot 1.4s infinite ease-in-out; }
+
+/* ==================== ROBOT 3D SCENE ==================== */
+.robot-3d-scene {
+  transform-origin: center bottom;
+  animation: robot3dFloat 4.5s infinite ease-in-out;
+}
+
+.antenna-3d {
+  animation: antenna3dBlink 1.3s infinite ease-in-out;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.eyes-3d {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: eyes3dBlink 4.5s infinite ease-in-out;
+}
+
+.heart-3d {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: heart3dBeat 1.7s infinite ease-in-out;
+}
+
+.arm-left-3d {
+  transform-box: view-box;
+  transform-origin: 108px 215px;
+  animation: typeLeft3d 0.42s infinite ease-in-out;
+}
+
+.arm-right-3d {
+  transform-box: view-box;
+  transform-origin: 212px 215px;
+  animation: typeRight3d 0.42s infinite ease-in-out;
+}
+
+.steam {
+  animation: steamRise 2.4s infinite ease-in-out;
+}
+
+.pen-tip {
+  animation: antenna3dBlink 2s infinite ease-in-out;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* ==================== ROBOT KEYFRAMES ==================== */
+@keyframes robot3dFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+
+@keyframes antenna3dBlink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+
+@keyframes eyes3dBlink {
+  0%, 41%, 43%, 100% { transform: scaleY(1); }
+  42%                { transform: scaleY(0.06); }
+}
+
+@keyframes heart3dBeat {
+  0%, 100% { transform: scale(1); }
+  12%      { transform: scale(1.22); }
+  24%      { transform: scale(1); }
+  38%      { transform: scale(1.12); }
+  52%      { transform: scale(1); }
+}
+
+@keyframes typeLeft3d {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  50%      { transform: rotate(-5deg) translateY(2.5px); }
+}
+
+@keyframes typeRight3d {
+  0%, 100% { transform: rotate(0deg) translateY(2.5px); }
+  50%      { transform: rotate(5deg) translateY(0); }
+}
+
+@keyframes steamRise {
+  0%   { opacity: 0; transform: translateY(3px); }
+  50%  { opacity: 0.5; transform: translateY(-3px); }
+  100% { opacity: 0; transform: translateY(-8px); }
+}
+
+/* ==================== WORKFLOW CANVAS (opsional, legacy) ==================== */
 .workflow-canvas {
   position: relative;
   background: #0b0f19;
@@ -162,171 +231,4 @@ body {
   color: #3b82f6 !important;
   text-shadow: 0 0 10px currentColor;
   transform: scale(1.2);
-}
-
-/* ==================== ROBOT 3D ANIMATIONS ==================== */
-
-/* Robot floating naik-turun */
-.robot-3d {
-  transform-origin: center bottom;
-  animation: robotFloat 4s infinite ease-in-out;
-}
-
-/* Antenna berkedip */
-.robot-antenna {
-  animation: antennaBlink 1.4s infinite ease-in-out;
-  transform-origin: center;
-}
-
-/* Mata berkedip */
-.robot-eyes {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: eyeBlink 4.2s infinite ease-in-out;
-}
-
-/* Jantung berdetak */
-.robot-heart {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: heartBeat 1.6s infinite ease-in-out;
-}
-
-/* Tangan kiri mengetik */
-.arm-left {
-  transform-box: view-box;
-  transform-origin: 78px 185px;
-  animation: typeLeft 0.45s infinite ease-in-out;
-}
-
-/* Tangan kanan mengetik (kebalikan) */
-.arm-right {
-  transform-box: view-box;
-  transform-origin: 162px 185px;
-  animation: typeRight 0.45s infinite ease-in-out;
-}
-
-/* ==================== KEYFRAMES ==================== */
-@keyframes robotFloat {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-4px); }
-}
-
-@keyframes antennaBlink {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.35; }
-}
-
-@keyframes eyeBlink {
-  0%, 42%, 44%, 100% { transform: scaleY(1); }
-  43%                { transform: scaleY(0.08); }
-}
-
-@keyframes heartBeat {
-  0%, 100% { transform: scale(1); }
-  15%      { transform: scale(1.18); }
-  30%      { transform: scale(1); }
-  45%      { transform: scale(1.1); }
-  60%      { transform: scale(1); }
-}
-
-@keyframes typeLeft {
-  0%, 100% { transform: rotate(0deg) translateY(0); }
-  50%      { transform: rotate(-6deg) translateY(3px); }
-}
-
-@keyframes typeRight {
-  0%, 100% { transform: rotate(0deg) translateY(3px); }
-  50%      { transform: rotate(6deg) translateY(0); }
-}
-/* ==================== ROBOT 3D SCENE ANIMATIONS ==================== */
-
-.robot-3d-scene {
-  transform-origin: center bottom;
-  animation: robot3dFloat 4.5s infinite ease-in-out;
-}
-
-/* Antenna blink */
-.antenna-3d {
-  animation: antenna3dBlink 1.3s infinite ease-in-out;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-/* Eyes blink */
-.eyes-3d {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: eyes3dBlink 4.5s infinite ease-in-out;
-}
-
-/* Heart beat */
-.heart-3d {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: heart3dBeat 1.7s infinite ease-in-out;
-}
-
-/* Left arm typing */
-.arm-left-3d {
-  transform-box: view-box;
-  transform-origin: 108px 215px;
-  animation: typeLeft3d 0.42s infinite ease-in-out;
-}
-
-/* Right arm typing (opposite phase) */
-.arm-right-3d {
-  transform-box: view-box;
-  transform-origin: 212px 215px;
-  animation: typeRight3d 0.42s infinite ease-in-out;
-}
-
-/* Steam from coffee */
-.steam {
-  animation: steamRise 2.4s infinite ease-in-out;
-}
-
-/* Pen tip pulse */
-.pen-tip {
-  animation: antenna3dBlink 2s infinite ease-in-out;
-}
-
-/* ==================== KEYFRAMES ==================== */
-@keyframes robot3dFloat {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-3px); }
-}
-
-@keyframes antenna3dBlink {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.3; }
-}
-
-@keyframes eyes3dBlink {
-  0%, 41%, 43%, 100% { transform: scaleY(1); }
-  42%                { transform: scaleY(0.06); }
-}
-
-@keyframes heart3dBeat {
-  0%, 100% { transform: scale(1); }
-  12%      { transform: scale(1.22); }
-  24%      { transform: scale(1); }
-  38%      { transform: scale(1.12); }
-  52%      { transform: scale(1); }
-}
-
-@keyframes typeLeft3d {
-  0%, 100% { transform: rotate(0deg) translateY(0); }
-  50%      { transform: rotate(-5deg) translateY(2.5px); }
-}
-
-@keyframes typeRight3d {
-  0%, 100% { transform: rotate(0deg) translateY(2.5px); }
-  50%      { transform: rotate(5deg) translateY(0); }
-}
-
-@keyframes steamRise {
-  0%   { opacity: 0; transform: translateY(3px); }
-  50%  { opacity: 0.5; transform: translateY(-3px); }
-  100% { opacity: 0; transform: translateY(-8px); }
 }
