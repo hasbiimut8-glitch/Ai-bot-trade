@@ -17,7 +17,7 @@ if (!GEMINI_API_KEY) {
 }
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
-// MEMECOIN PAIR CONFIGURATION (Contoh: PEPEUSDT atau DOGEUSDT)
+// MEMECOIN PAIR CONFIGURATION (PEPE/USDT)
 const MEMECOIN_SYMBOL = 'PEPEUSDT';
 const MEMECOIN_DISPLAY = 'PEPE/USDT';
 
@@ -130,22 +130,30 @@ async function executeBrokerOrder(action, price, lotSize = 0.01) {
     }
 }
 
-// 4. AUTONOMOUS AGENT MAIN LOOP (MEMECOIN MODE)
+// 4. AUTONOMOUS AGENT MAIN LOOP (MEMECOIN MODE WITH ANTI-NaN GUARD)
 async function runAutonomousForexAgent() {
     if (isExecutingCycle) return;
     isExecutingCycle = true;
 
     cycleCount++;
     try {
-        // FETCH REAL-TIME PRICE FROM BINANCE PUBLIC API
+        // FETCH REAL-TIME PRICE DENGAN PENGAMAN ANTI-NaN
         let currentPrice = 0;
         try {
-            const binanceRes = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${MEMECOIN_SYMBOL}`);
+            const binanceRes = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${MEMECOIN_SYMBOL}`, {
+                headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
             const binanceData = await binanceRes.json();
-            currentPrice = parseFloat(binanceData.price);
+            
+            if (binanceData && binanceData.price && !isNaN(parseFloat(binanceData.price))) {
+                currentPrice = parseFloat(binanceData.price);
+            } else {
+                throw new Error("Respon harga Binance tidak valid");
+            }
         } catch (err) {
-            // Fallback jika API terganggu
-            currentPrice = 0.0000095 + (Math.sin(cycleCount * 1.2) * 0.0000005);
+            console.warn("[Price Fetch Alert]: Memakai harga simulasi fallback ->", err.message);
+            // Fallback simulasi harga jika API Binance terblokir oleh Railway IP
+            currentPrice = 0.00000950 + (Math.sin(cycleCount * 1.5) * 0.00000040) + ((Math.random() - 0.5) * 0.00000010);
         }
 
         priceHistory.push(currentPrice);
@@ -163,14 +171,13 @@ async function runAutonomousForexAgent() {
         for (let i = activeTrades.length - 1; i >= 0; i--) {
             let trade = activeTrades[i];
             
-            // Perhitungan PnL berbasis persentase perubahan harga Memecoin
             let priceDiff = (trade.type === "BUY") ? (currentPrice - trade.entryPrice) : (trade.entryPrice - currentPrice);
             let pnlPercentage = priceDiff / trade.entryPrice;
-            let currentPnl = trade.amount * pnlPercentage * 10; // Scaled for high-leverage memecoin scalping
+            let currentPnl = trade.amount * pnlPercentage * 10;
 
             totalCurrentPnl += currentPnl;
 
-            const dynamicSL = -5.00; // Stop Loss $5 per posisi untuk proteksi volatil memecoin
+            const dynamicSL = -5.00; // Stop Loss $5 per posisi
 
             // CLOSE INDIVIDUAL JIKA PROFIT >= $1.00 ATAU KENA SL
             if (currentPnl >= 1.00 || currentPnl <= dynamicSL) {
