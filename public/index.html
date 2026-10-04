@@ -65,53 +65,234 @@
       </div>
 
       <!-- Robot -->
-      <div class="w-36 h-32 rounded-2xl bg-gradient-to-b from-[#0e1628] to-[#050811] border border-orange-500/40 flex items-center justify-center relative robot-animated shadow-2xl p-1">
-        <div class="absolute inset-1.5 border border-dashed border-orange-500/30 rounded-xl pointer-events-none"></div>
-        <div class="absolute w-24 h-24 bg-orange-500/15 rounded-full blur-xl"></div>
-        <svg class="w-28 h-28 relative z-10" viewBox="0 0 200 200" fill="none">
-          <line x1="100" y1="50" x2="100" y2="28" stroke="#f7931a" stroke-width="4" stroke-linecap="round"/>
-          <circle cx="100" cy="22" r="6" fill="#f7931a" class="robot-eye"/>
-          <rect x="42" y="80" width="16" height="40" rx="6" fill="#1e293b" stroke="#f7931a" stroke-width="3"/>
-          <rect x="142" y="80" width="16" height="40" rx="6" fill="#1e293b" stroke="#f7931a" stroke-width="3"/>
-          <circle cx="50" cy="100" r="3" fill="#fbbf24"/>
-          <circle cx="150" cy="100" r="3" fill="#fbbf24"/>
-          <rect x="52" y="48" width="96" height="96" rx="30" fill="url(#rg)" stroke="#fbbf24" stroke-width="4"/>
-          <rect x="65" y="66" width="70" height="52" rx="14" fill="#020617" stroke="#f7931a" stroke-width="3"/>
-          <line x1="72" y1="92" x2="128" y2="92" stroke="#f7931a" stroke-width="1.5" stroke-opacity=".4" class="scan-line"/>
-          <g class="robot-eye">
-            <circle cx="88" cy="92" r="9" fill="#f7931a"/>
-            <circle cx="88" cy="92" r="4" fill="#fff"/>
-            <circle cx="112" cy="92" r="9" fill="#f7931a"/>
-            <circle cx="112" cy="92" r="4" fill="#fff"/>
-          </g>
-          <path d="M82 122H118" stroke="#f7931a" stroke-width="3.5" stroke-linecap="round"/>
-          <path d="M92 130H108" stroke="#fbbf24" stroke-width="2.5" stroke-linecap="round"/>
-          <path d="M60 144L45 170" stroke="#f7931a" stroke-width="5" stroke-linecap="round"/>
-          <path d="M140 144L155 170" stroke="#f7931a" stroke-width="5" stroke-linecap="round"/>
-          <circle cx="43" cy="173" r="5" fill="#fbbf24"/>
-          <circle cx="157" cy="173" r="5" fill="#fbbf24"/>
-          <defs>
-            <linearGradient id="rg" x1="52" y1="48" x2="148" y2="144">
-              <stop stop-color="#1e293b"/><stop offset="1" stop-color="#090d16"/>
-            </linearGradient>
-          </defs>
-        </svg>
-      </div>
-    </div>
+    <!-- Robot Orion 3D Scene -->
+<div class="w-full rounded-2xl bg-gradient-to-b from-[#1a0f08] via-[#0d0a08] to-[#050508] border border-orange-500/30 flex items-center justify-center relative shadow-2xl overflow-hidden" style="aspect-ratio: 1 / 1;">
+  <div class="absolute inset-2 border border-dashed border-orange-500/15 rounded-xl pointer-events-none"></div>
+  <div class="absolute w-40 h-40 bg-orange-500/20 rounded-full blur-3xl"></div>
 
-    <div class="flex items-center justify-between bg-gray-900/80 rounded-xl p-3.5 border border-gray-800/80 mt-4 relative z-10">
-      <div>
-        <span class="text-[11px] text-gray-400 font-medium block">Total PnL</span>
-        <div class="flex items-center space-x-1.5 mt-0.5">
-          <span id="todayPnL" class="text-base font-bold text-gray-400">+$0.00</span>
-          <span id="profitPercentage" class="text-[10px] text-gray-400 bg-gray-500/10 px-1 py-0.5 rounded font-semibold">(+0.00%)</span>
-        </div>
-      </div>
-      <button id="toggleBtn" class="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-orange-600/35">
-        Mulai Bot
-      </button>
-    </div>
-  </div>
+  <svg class="w-full h-full relative z-10 robot-3d-scene" viewBox="0 0 320 340" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <!-- 3D shading gradients -->
+      <radialGradient id="h3dHead" cx="35%" cy="25%" r="80%">
+        <stop offset="0%" stop-color="#fdf8f0"/>
+        <stop offset="30%" stop-color="#f0e6d6"/>
+        <stop offset="65%" stop-color="#c5b7a3"/>
+        <stop offset="100%" stop-color="#7d7160"/>
+      </radialGradient>
+      <radialGradient id="h3dBody" cx="40%" cy="22%" r="95%">
+        <stop offset="0%" stop-color="#faf3e8"/>
+        <stop offset="35%" stop-color="#e6dcc9"/>
+        <stop offset="70%" stop-color="#b0a48e"/>
+        <stop offset="100%" stop-color="#6e6353"/>
+      </radialGradient>
+      <radialGradient id="h3dVisor" cx="50%" cy="30%" r="85%">
+        <stop offset="0%" stop-color="#252525"/>
+        <stop offset="55%" stop-color="#0c0c0c"/>
+        <stop offset="100%" stop-color="#000000"/>
+      </radialGradient>
+      <radialGradient id="h3dEye" cx="35%" cy="30%" r="75%">
+        <stop offset="0%" stop-color="#fff2d1"/>
+        <stop offset="30%" stop-color="#ffbc5c"/>
+        <stop offset="65%" stop-color="#f7931a"/>
+        <stop offset="100%" stop-color="#8f4300"/>
+      </radialGradient>
+      <radialGradient id="h3dHeart" cx="35%" cy="30%" r="85%">
+        <stop offset="0%" stop-color="#ffdfa3"/>
+        <stop offset="35%" stop-color="#ffab3b"/>
+        <stop offset="100%" stop-color="#b35400"/>
+      </radialGradient>
+      <radialGradient id="h3dEar" cx="35%" cy="30%" r="85%">
+        <stop offset="0%" stop-color="#f5ecdb"/>
+        <stop offset="60%" stop-color="#c1b4a0"/>
+        <stop offset="100%" stop-color="#6e6353"/>
+      </radialGradient>
+      <linearGradient id="h3dArm" x1="0%" y1="0%" x2="20%" y2="100%">
+        <stop offset="0%" stop-color="#f0e6d4"/>
+        <stop offset="55%" stop-color="#c0b29e"/>
+        <stop offset="100%" stop-color="#7a6e5f"/>
+      </linearGradient>
+      <linearGradient id="h3dLaptop" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#2b1e16"/>
+        <stop offset="100%" stop-color="#0a0707"/>
+      </linearGradient>
+      <linearGradient id="h3dDesk" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#2c1a10"/>
+        <stop offset="100%" stop-color="#080505"/>
+      </linearGradient>
+      <radialGradient id="h3dBg" cx="50%" cy="35%" r="80%">
+        <stop offset="0%" stop-color="#26140a"/>
+        <stop offset="60%" stop-color="#0d0908"/>
+        <stop offset="100%" stop-color="#050508"/>
+      </radialGradient>
+
+      <filter id="h3dGlow" x="-100%" y="-100%" width="300%" height="300%">
+        <feGaussianBlur stdDeviation="2.5"/>
+      </filter>
+      <filter id="h3dGlowBig" x="-100%" y="-100%" width="300%" height="300%">
+        <feGaussianBlur stdDeviation="7"/>
+      </filter>
+      <filter id="h3dShadow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="3"/>
+      </filter>
+    </defs>
+
+    <!-- Ambient background -->
+    <rect width="320" height="340" fill="url(#h3dBg)"/>
+
+    <!-- Blurred window/city hint (kiri) -->
+    <g opacity="0.35">
+      <rect x="6" y="20" width="72" height="130" rx="8" fill="#3d1e08"/>
+      <rect x="14" y="40" width="6" height="40" fill="#f7931a" opacity="0.4"/>
+      <rect x="26" y="30" width="4" height="55" fill="#f7931a" opacity="0.3"/>
+      <rect x="38" y="50" width="5" height="45" fill="#f7931a" opacity="0.35"/>
+      <rect x="52" y="35" width="4" height="60" fill="#f7931a" opacity="0.3"/>
+    </g>
+
+    <!-- Wall tech lines (kanan) -->
+    <g opacity="0.4">
+      <rect x="245" y="30" width="65" height="90" rx="6" fill="#1a0e06"/>
+      <path d="M 258 55 L 278 55 M 258 65 L 278 65 M 258 75 L 270 75" stroke="#f7931a" stroke-width="1.5" opacity="0.5"/>
+      <path d="M 285 90 C 285 82 292 78 296 78 C 300 78 307 82 307 90" stroke="#f7931a" stroke-width="1.5" fill="none" opacity="0.6"/>
+    </g>
+
+    <!-- Desk with warm underlight -->
+    <ellipse cx="160" cy="295" rx="150" ry="30" fill="#f7931a" opacity="0.15" filter="url(#h3dGlowBig)"/>
+    <rect x="0" y="290" width="320" height="60" fill="url(#h3dDesk)"/>
+    <line x1="0" y1="290" x2="320" y2="290" stroke="#f7931a" stroke-width="0.8" opacity="0.4"/>
+
+    <!-- === ROBOT (draw first, then laptop in front) === -->
+
+    <!-- Body torso -->
+    <path d="M 112 195 Q 102 200 98 220 L 98 255 Q 98 265 108 267 L 212 267 Q 222 265 222 255 L 222 220 Q 218 200 208 195 Q 186 184 160 184 Q 134 184 112 195 Z"
+          fill="url(#h3dBody)" stroke="#5c5142" stroke-width="1"/>
+
+    <!-- Neck -->
+    <rect x="146" y="174" width="28" height="14" rx="5" fill="#7a6d5c"/>
+    <rect x="149" y="176" width="22" height="10" rx="3" fill="#9c8f7c" opacity="0.4"/>
+
+    <!-- Shoulders -->
+    <ellipse cx="107" cy="210" rx="16" ry="19" fill="url(#h3dEar)" stroke="#5c5142" stroke-width="0.8"/>
+    <ellipse cx="213" cy="210" rx="16" ry="19" fill="url(#h3dEar)" stroke="#5c5142" stroke-width="0.8"/>
+
+    <!-- Chest heart + glow -->
+    <ellipse cx="160" cy="222" rx="26" ry="22" fill="#f7931a" opacity="0.28" filter="url(#h3dGlowBig)"/>
+    <g class="heart-3d">
+      <path d="M 160 238 C 160 238 142 224 142 211 C 142 203 149 199 155 199 C 158 199 160 202 160 202 C 160 202 162 199 165 199 C 171 199 178 203 178 211 C 178 224 160 238 160 238 Z"
+            fill="url(#h3dHeart)"/>
+      <path d="M 160 238 C 160 238 142 224 142 211 C 142 203 149 199 155 199 C 158 199 160 202 160 202 C 160 202 162 199 165 199 C 171 199 178 203 178 211 C 178 224 160 238 160 238 Z"
+            fill="none" stroke="#ffcc7a" stroke-width="0.6" opacity="0.6"/>
+    </g>
+
+    <!-- Head -->
+    <ellipse cx="160" cy="112" rx="60" ry="58" fill="url(#h3dHead)" stroke="#5c5142" stroke-width="1"/>
+
+    <!-- Head top accent -->
+    <path d="M 112 92 Q 160 60 208 92" fill="none" stroke="#f7931a" stroke-width="2" stroke-linecap="round" opacity="0.7" filter="url(#h3dGlow)"/>
+
+    <!-- Headphone band -->
+    <path d="M 104 92 Q 160 44 216 92" fill="none" stroke="#4e4335" stroke-width="5" stroke-linecap="round"/>
+
+    <!-- Ears -->
+    <ellipse cx="100" cy="112" rx="13" ry="21" fill="url(#h3dEar)" stroke="#5c5142" stroke-width="0.8"/>
+    <ellipse cx="100" cy="112" rx="5" ry="11" fill="#f7931a" opacity="0.55" filter="url(#h3dGlow)"/>
+    <ellipse cx="220" cy="112" rx="13" ry="21" fill="url(#h3dEar)" stroke="#5c5142" stroke-width="0.8"/>
+    <ellipse cx="220" cy="112" rx="5" ry="11" fill="#f7931a" opacity="0.55" filter="url(#h3dGlow)"/>
+
+    <!-- Antenna -->
+    <line x1="160" y1="54" x2="160" y2="32" stroke="#7a6d5c" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="160" cy="28" r="5" fill="#f7931a" class="antenna-3d"/>
+
+    <!-- Visor -->
+    <ellipse cx="160" cy="118" rx="46" ry="40" fill="url(#h3dVisor)"/>
+
+    <!-- Eye glow halos -->
+    <circle cx="142" cy="115" r="15" fill="#f7931a" opacity="0.4" filter="url(#h3dGlow)"/>
+    <circle cx="178" cy="115" r="15" fill="#f7931a" opacity="0.4" filter="url(#h3dGlow)"/>
+
+    <!-- Eyes (blink group) -->
+    <g class="eyes-3d">
+      <circle cx="142" cy="115" r="10" fill="url(#h3dEye)"/>
+      <circle cx="139" cy="111" r="2.8" fill="#fff" opacity="0.75"/>
+      <circle cx="178" cy="115" r="10" fill="url(#h3dEye)"/>
+      <circle cx="175" cy="111" r="2.8" fill="#fff" opacity="0.75"/>
+    </g>
+
+    <!-- Smile -->
+    <path d="M 146 138 Q 160 150 174 138" stroke="#f7931a" stroke-width="2.8" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
+
+    <!-- === LAPTOP (di depan robot) === -->
+    <g>
+      <!-- Shadow under laptop -->
+      <ellipse cx="160" cy="296" rx="85" ry="8" fill="#000" opacity="0.6" filter="url(#h3dShadow)"/>
+      <!-- Laptop body -->
+      <path d="M 78 268 Q 76 258 86 256 L 234 256 Q 244 258 242 268 L 252 292 Q 252 298 246 298 L 74 298 Q 68 298 68 292 Z"
+            fill="url(#h3dLaptop)" stroke="#3d2a1c" stroke-width="1"/>
+      <!-- Logo cloud glow -->
+      <ellipse cx="160" cy="278" rx="24" ry="16" fill="#f7931a" opacity="0.3" filter="url(#h3dGlowBig)"/>
+      <!-- Cloud outline with smiley -->
+      <path d="M 145 282 Q 139 282 139 276 Q 139 270 145 270 Q 145 262 154 262 Q 159 259 163 264 Q 167 259 173 263 Q 180 263 180 270 Q 185 271 185 277 Q 185 283 179 283 Z"
+            fill="none" stroke="#f7931a" stroke-width="1.8" stroke-linejoin="round" filter="url(#h3dGlow)"/>
+      <circle cx="152" cy="274" r="1.6" fill="#f7931a"/>
+      <circle cx="166" cy="274" r="1.6" fill="#f7931a"/>
+      <path d="M 151 279 Q 159 284 167 279" stroke="#f7931a" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+    </g>
+
+    <!-- === ARMS + HANDS (di atas laptop, mengetik) === -->
+    <!-- Left arm -->
+    <g class="arm-left-3d">
+      <path d="M 108 215 L 96 250 L 108 272" stroke="url(#h3dArm)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <path d="M 108 215 L 96 250 L 108 272" stroke="#f0e6d4" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.35"/>
+      <ellipse cx="110" cy="274" rx="11" ry="7" fill="#e8dfcf" stroke="#5c5142" stroke-width="0.8"/>
+      <circle cx="104" cy="276" r="1.8" fill="#7a6d5c"/>
+      <circle cx="110" cy="278" r="1.8" fill="#7a6d5c"/>
+      <circle cx="116" cy="278" r="1.8" fill="#7a6d5c"/>
+    </g>
+
+    <!-- Right arm -->
+    <g class="arm-right-3d">
+      <path d="M 212 215 L 224 250 L 212 272" stroke="url(#h3dArm)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <path d="M 212 215 L 224 250 L 212 272" stroke="#f0e6d4" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.35"/>
+      <ellipse cx="210" cy="274" rx="11" ry="7" fill="#e8dfcf" stroke="#5c5142" stroke-width="0.8"/>
+      <circle cx="204" cy="276" r="1.8" fill="#7a6d5c"/>
+      <circle cx="210" cy="278" r="1.8" fill="#7a6d5c"/>
+      <circle cx="216" cy="278" r="1.8" fill="#7a6d5c"/>
+    </g>
+
+    <!-- === PROPS === -->
+    <!-- Coffee mug -->
+    <g>
+      <ellipse cx="48" cy="308" rx="18" ry="5" fill="#000" opacity="0.5"/>
+      <path d="M 33 280 Q 33 308 48 308 Q 63 308 63 280 Z" fill="#1a1008" stroke="#3d2a1c" stroke-width="0.8"/>
+      <ellipse cx="48" cy="280" rx="15" ry="4.5" fill="#080403" stroke="#3d2a1c" stroke-width="0.6"/>
+      <!-- Steam -->
+      <path d="M 45 272 Q 43 268 45 264 M 51 272 Q 49 268 51 264" stroke="#f7931a" stroke-width="1" fill="none" opacity="0.4" class="steam"/>
+      <!-- Heart on mug -->
+      <path d="M 48 296 C 48 296 41 290 41 285 C 41 282 44 280 46 280 C 47 280 48 281 48 281 C 48 281 49 280 50 280 C 52 280 55 282 55 285 C 55 290 48 296 48 296 Z"
+            fill="#f7931a" opacity="0.9" filter="url(#h3dGlow)"/>
+      <!-- Handle -->
+      <path d="M 63 285 Q 73 285 73 294 Q 73 303 63 303" fill="none" stroke="#3d2a1c" stroke-width="2.5"/>
+    </g>
+
+    <!-- Notebook + pen -->
+    <g>
+      <rect x="240" y="288" width="60" height="22" rx="2.5" fill="#0a0808" stroke="#3d2a1c" stroke-width="0.7" transform="rotate(-4 270 299)"/>
+      <line x1="245" y1="292" x2="293" y2="289" stroke="#f7931a" stroke-width="0.6" opacity="0.5"/>
+      <rect x="262" y="302" width="26" height="3" rx="1.2" fill="#8a7d6d" transform="rotate(-22 275 304)"/>
+      <circle cx="288" cy="297" r="2.2" fill="#f7931a" opacity="0.75" filter="url(#h3dGlow)" class="pen-tip"/>
+    </g>
+
+    <!-- Plant (kanan bawah) -->
+    <g opacity="0.85">
+      <ellipse cx="300" cy="308" rx="12" ry="3" fill="#000" opacity="0.5"/>
+      <path d="M 288 306 L 290 288 L 310 288 L 312 306 Z" fill="#2a1a10" stroke="#3d2a1c" stroke-width="0.6"/>
+      <path d="M 296 288 Q 292 275 296 268 M 302 288 Q 306 274 302 266 M 300 288 Q 300 272 300 262"
+            stroke="#3d5a3a" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+      <ellipse cx="296" cy="266" rx="5" ry="3" fill="#4a6b45"/>
+      <ellipse cx="303" cy="264" rx="5" ry="3" fill="#4a6b45"/>
+      <ellipse cx="300" cy="260" rx="4" ry="3" fill="#4a6b45"/>
+    </g>
+  </svg>
+</div>
 
   <!-- Market Card -->
   <div class="glass-card rounded-2xl p-4">
