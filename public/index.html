@@ -52,7 +52,6 @@
   <div class="glass-card rounded-2xl p-4 relative overflow-hidden glow-orange border border-orange-500/20">
     <div class="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br from-orange-500/25 to-amber-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
-    <!-- Judul atas scene -->
     <div class="flex justify-between items-center mb-3 relative z-10">
       <div>
         <h2 class="text-lg font-bold text-white tracking-tight">Orion siap tempur!</h2>
@@ -70,6 +69,12 @@
     <div class="w-full rounded-2xl bg-gradient-to-b from-[#1a0f08] via-[#0d0a08] to-[#050508] border border-orange-500/30 flex items-center justify-center relative shadow-2xl overflow-hidden" style="aspect-ratio: 1 / 1;">
       <div class="absolute inset-2 border border-dashed border-orange-500/15 rounded-xl pointer-events-none"></div>
       <div class="absolute w-40 h-40 bg-orange-500/20 rounded-full blur-3xl"></div>
+
+      <!-- SPEECH BUBBLE -->
+      <div id="speechBubble" class="speech-bubble hidden">
+        <div class="speech-bubble-tail"></div>
+        <span id="speechText">...</span>
+      </div>
 
       <svg class="w-full h-full relative z-10 robot-3d-scene" viewBox="0 0 320 340" xmlns="http://www.w3.org/2000/svg">
         <defs>
@@ -139,7 +144,7 @@
         <!-- Background -->
         <rect width="320" height="340" fill="url(#h3dBg)"/>
 
-        <!-- Window city hint -->
+        <!-- Window city -->
         <g opacity="0.35">
           <rect x="6" y="20" width="72" height="130" rx="8" fill="#3d1e08"/>
           <rect x="14" y="40" width="6" height="40" fill="#f7931a" opacity="0.4"/>
@@ -148,7 +153,7 @@
           <rect x="52" y="35" width="4" height="60" fill="#f7931a" opacity="0.3"/>
         </g>
 
-        <!-- Wall tech lines -->
+        <!-- Wall tech -->
         <g opacity="0.4">
           <rect x="245" y="30" width="65" height="90" rx="6" fill="#1a0e06"/>
           <path d="M 258 55 L 278 55 M 258 65 L 278 65 M 258 75 L 270 75" stroke="#f7931a" stroke-width="1.5" opacity="0.5"/>
@@ -203,20 +208,40 @@
         <!-- Visor -->
         <ellipse cx="160" cy="118" rx="46" ry="40" fill="url(#h3dVisor)"/>
 
-        <!-- Eye halos -->
-        <circle cx="142" cy="115" r="15" fill="#f7931a" opacity="0.4" filter="url(#h3dGlow)"/>
-        <circle cx="178" cy="115" r="15" fill="#f7931a" opacity="0.4" filter="url(#h3dGlow)"/>
-
-        <!-- Eyes -->
-        <g class="eyes-3d">
-          <circle cx="142" cy="115" r="10" fill="url(#h3dEye)"/>
-          <circle cx="139" cy="111" r="2.8" fill="#fff" opacity="0.75"/>
-          <circle cx="178" cy="115" r="10" fill="url(#h3dEye)"/>
-          <circle cx="175" cy="111" r="2.8" fill="#fff" opacity="0.75"/>
+        <!-- ==================== FACE NORMAL ==================== -->
+        <g class="face-normal">
+          <circle cx="142" cy="115" r="15" fill="#f7931a" opacity="0.4" filter="url(#h3dGlow)"/>
+          <circle cx="178" cy="115" r="15" fill="#f7931a" opacity="0.4" filter="url(#h3dGlow)"/>
+          <g class="eyes-3d">
+            <circle cx="142" cy="115" r="10" fill="url(#h3dEye)"/>
+            <circle cx="139" cy="111" r="2.8" fill="#fff" opacity="0.75"/>
+            <circle cx="178" cy="115" r="10" fill="url(#h3dEye)"/>
+            <circle cx="175" cy="111" r="2.8" fill="#fff" opacity="0.75"/>
+          </g>
+          <path d="M 146 138 Q 160 150 174 138" stroke="#f7931a" stroke-width="2.8" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
         </g>
 
-        <!-- Smile -->
-        <path d="M 146 138 Q 160 150 174 138" stroke="#f7931a" stroke-width="2.8" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
+        <!-- ==================== FACE HAPPY ==================== -->
+        <g class="face-happy">
+          <circle cx="142" cy="115" r="18" fill="#f7931a" opacity="0.55" filter="url(#h3dGlow)"/>
+          <circle cx="178" cy="115" r="18" fill="#f7931a" opacity="0.55" filter="url(#h3dGlow)"/>
+          <path d="M 130 118 Q 142 106 154 118" stroke="#f7931a" stroke-width="3.5" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
+          <path d="M 166 118 Q 178 106 190 118" stroke="#f7931a" stroke-width="3.5" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
+          <path d="M 138 132 Q 160 158 182 132" stroke="#f7931a" stroke-width="3.2" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
+          <circle cx="128" cy="134" r="3" fill="#f7931a" opacity="0.7" filter="url(#h3dGlow)"/>
+          <circle cx="192" cy="134" r="3" fill="#f7931a" opacity="0.7" filter="url(#h3dGlow)"/>
+        </g>
+
+        <!-- ==================== FACE SAD ==================== -->
+        <g class="face-sad">
+          <circle cx="142" cy="120" r="12" fill="#f7931a" opacity="0.25" filter="url(#h3dGlow)"/>
+          <circle cx="178" cy="120" r="12" fill="#f7931a" opacity="0.25" filter="url(#h3dGlow)"/>
+          <path d="M 132 118 Q 142 124 152 118" stroke="#f7931a" stroke-width="3" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
+          <path d="M 168 118 Q 178 124 188 118" stroke="#f7931a" stroke-width="3" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
+          <path d="M 148 148 Q 160 136 172 148" stroke="#f7931a" stroke-width="3" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
+          <path d="M 128 128 L 134 134 M 128 134 L 134 128" stroke="#60a5fa" stroke-width="1.5" opacity="0.7" stroke-linecap="round"/>
+          <path d="M 186 128 L 192 134 M 186 134 L 192 128" stroke="#60a5fa" stroke-width="1.5" opacity="0.7" stroke-linecap="round"/>
+        </g>
 
         <!-- Laptop -->
         <g>
@@ -283,7 +308,7 @@
       </svg>
     </div>
 
-    <!-- Baris PnL + tombol -->
+    <!-- PnL + tombol -->
     <div class="flex items-center justify-between bg-gray-900/80 rounded-xl p-3.5 border border-gray-800/80 mt-3 relative z-10">
       <div>
         <span class="text-[11px] text-gray-400 font-medium block">Total PnL</span>
