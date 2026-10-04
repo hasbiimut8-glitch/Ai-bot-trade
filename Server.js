@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const port = process.env.PORT || 3000;
 
-// ================== CONFIG & VALIDATION ==================
+// ================== CONFIG ==================
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 if (!GEMINI_API_KEY) {
   console.error("FATAL: GEMINI_API_KEY tidak diset.");
@@ -19,9 +19,7 @@ if (!GEMINI_API_KEY) {
 const ai = new GoogleGenAI({
   apiKey: GEMINI_API_KEY,
   apiVersion: 'v1',
-  httpOptions: {
-    headers: { 'x-goog-api-key': GEMINI_API_KEY },
-  },
+  httpOptions: { headers: { 'x-goog-api-key': GEMINI_API_KEY } },
 });
 
 const SYMBOL = 'BTCUSDT';
@@ -42,22 +40,38 @@ if (ENABLE_LIVE_BROKER && (!META_API_TOKEN || !META_ACCOUNT_ID)) {
   process.exit(1);
 }
 
-// ================== CONSTANTS ==================
+// ================== CONSTANTS (TUNED UNTUK SCALPING KILAT) ==================
 const LOOP_INTERVAL_MS = 25000;
-const MAX_ACTIVE_TRADES = 3;
+
+// 🔥 8 POSISI SEKALIGUS
+const MAX_ACTIVE_TRADES = 8;
+
 const MAX_PRICE_HISTORY = 100;
 const MAX_MARKET_MEMORY = 10;
 const MAX_TRADE_HISTORY = 25;
 
-const RISK_PER_TRADE = 0.05;
-const TAKER_FEE = 0.001;
+// Notional per posisi = 1% × saldo = $100 (dari saldo awal $10,000)
+// 8 posisi × $100 = $800 total exposure (8% dari saldo) — aman
+const RISK_PER_TRADE = 0.01;
+
+// Fee: 0.04% per sisi (realistis untuk crypto exchange tier normal)
+// Total round-trip = 0.08% × $100 = $0.08
+const TAKER_FEE = 0.0004;
 const SLIPPAGE = 0.0002;
 
-const STOP_LOSS_PCT = -0.015;
-const TAKE_PROFIT_PCT = 0.03;
+// 🔥 TARGET PROFIT NET setelah fee, per posisi
+// $0.15 net → butuh gerakan BTC ~0.23% (realistis dalam 1–5 menit)
+const TARGET_PROFIT_USD = 0.15;
 
-const FALLBACK_PROFIT_CLOSE_PCT = 0.008;
-const FALLBACK_LOSS_CLOSE_PCT = -0.012;
+// Safety net SL: -0.2% per posisi (rugi max ~$0.28 net per posisi)
+const STOP_LOSS_PCT = -0.002;
+
+// Hard cap TP persentase (jaga-jaga kalau BTC gerak liar)
+const TAKE_PROFIT_PCT = 0.015;
+
+// Fallback thresholds saat Gemini error
+const FALLBACK_PROFIT_CLOSE_PCT = 0.003;
+const FALLBACK_LOSS_CLOSE_PCT = -0.002;
 
 const RSI_PERIOD = 14;
 const EMA_FAST = 12;
@@ -78,7 +92,7 @@ let serverLogs = {};
 let marketMemory = [];
 let consecutiveFailures = 0;
 let lastGeminiStatus = 'unknown';
-let lastCloseEvent = null;   // <-- emotion trigger untuk frontend
+let lastCloseEvent = null;
 
 // ================== HELPERS ==================
 function applySlippage(price, side) {
@@ -148,7 +162,9 @@ function computeUnrealizedPnl(currentPrice) {
 }
 
 function computeNetPnl(trade, exitPrice) {
-  const grossDiff = trade.type === 'BUY' ? (exitPrice - trade.entryPrice) : (trade.entryPrice - exitPrice);
+  const grossDiff = trade.type === 'BUY'
+    ? (exitPrice - trade.entryPrice)
+    : (trade.entryPrice - exitPrice);
   const grossPnl = trade.notional * (grossDiff / trade.entryPrice);
   const entryFee = trade.notional * TAKER_FEE;
   const exitFee = (trade.notional + grossPnl) * TAKER_FEE;
@@ -169,7 +185,6 @@ function updateMarketMemory({ price, rsi, ema, macdStatus, decision, reasoning, 
   if (marketMemory.length > MAX_MARKET_MEMORY) marketMemory.shift();
 }
 
-// ---- EMOTION EVENT ----
 function setCloseEvent(pnl, source) {
   const isProfit = pnl >= 0;
   lastCloseEvent = {
@@ -233,41 +248,59 @@ async function executeBrokerClose(positionId) {
   } catch (err) { return { ok: false, error: err.message }; }
 }
 
-// ================== SL/TP AUTOCLOSE ==================
+// ================== TP/SL (PER POSISI, USD-BASED) ==================
 async function checkStopLossTakeProfit(currentPrice) {
-  if (activeTrades.length === 0) return { closed: false, pnl: 0 };
+  if (activeTrades.length === 0) return { closed: false, pnl: 0, count: 0 };
+
   let closedPnl = 0;
   const remaining = [];
   let anyClosed = false;
+  let closedCount = 0;
 
   for (const trade of activeTrades) {
-    const diff = trade.type === 'BUY' ? (currentPrice - trade.entryPrice) : (trade.entryPrice - currentPrice);
+    const diff = trade.type === 'BUY'
+      ? (currentPrice - trade.entryPrice)
+      : (trade.entryPrice - currentPrice);
     const pct = diff / trade.entryPrice;
+    const { netPnl } = computeNetPnl(trade, currentPrice);
 
-    if (pct <= STOP_LOSS_PCT || pct >= TAKE_PROFIT_PCT) {
-      const reason = pct <= STOP_LOSS_PCT ? 'SL' : 'TP';
+    // 🔥 TP UTAMA: berbasis USD net
+    const hitTP = netPnl >= TARGET_PROFIT_USD;
+    // Safety net SL persen
+    const hitSL = pct <= STOP_LOSS_PCT;
+    // Hard cap kalau gerakan besar tak terduga
+    const hitBigTP = pct >= TAKE_PROFIT_PCT;
+
+    if (hitTP || hitSL || hitBigTP) {
+      const reason = hitSL ? 'SL' : hitTP ? 'TP' : 'TP-CAP';
       const result = await executeBrokerClose(trade.positionId);
-      if (!result.ok) { console.error(`[${reason}] Gagal close ${trade.positionId}: ${result.error}`); remaining.push(trade); continue; }
-      const { netPnl } = computeNetPnl(trade, currentPrice);
+      if (!result.ok) {
+        console.error(`[${reason}] Gagal close ${trade.positionId}: ${result.error}`);
+        remaining.push(trade);
+        continue;
+      }
       closedPnl += netPnl;
       anyClosed = true;
+      closedCount++;
       tradeHistory.unshift({
         time: new Date().toLocaleTimeString('id-ID'),
-        type: `${reason} ${trade.type} (${(pct * 100).toFixed(2)}%)`,
+        type: `${reason} ${trade.type} (${pct >= 0 ? '+' : ''}${(pct * 100).toFixed(2)}% • $${netPnl.toFixed(2)})`,
         open: trade.entryPrice.toFixed(2),
         close: currentPrice.toFixed(2),
         pnl: netPnl,
         balanceAfter: virtualBalance + closedPnl
       });
-    } else remaining.push(trade);
+    } else {
+      remaining.push(trade);
+    }
   }
 
   activeTrades = remaining;
   if (anyClosed) {
     virtualBalance += closedPnl;
-    setCloseEvent(closedPnl, 'SL/TP');
+    setCloseEvent(closedPnl, 'TP/SL');
   }
-  return { closed: anyClosed, pnl: closedPnl };
+  return { closed: anyClosed, pnl: closedPnl, count: closedCount };
 }
 
 // ================== GEMINI CALL ==================
@@ -306,6 +339,7 @@ async function callGeminiWithRetry(systemPrompt) {
 function fallbackDecision(currentPrice, rsiValue, macdText, rsiText) {
   const decision = { action: 'HOLD', reasoning: '', confidence: 0 };
   if (activeTrades.length > 0) {
+    // Auto close pakai avg entry
     const avgEntry = activeTrades.reduce((s, t) => s + t.entryPrice, 0) / activeTrades.length;
     const isBuy = activeTrades[0].type === 'BUY';
     const diff = isBuy ? (currentPrice - avgEntry) : (avgEntry - currentPrice);
@@ -313,17 +347,17 @@ function fallbackDecision(currentPrice, rsiValue, macdText, rsiText) {
 
     if (pct >= FALLBACK_PROFIT_CLOSE_PCT) {
       decision.action = 'CLOSE';
-      decision.reasoning = `Fallback: auto-close profit +${(pct * 100).toFixed(2)}%`;
+      decision.reasoning = `Fallback: auto-close +${(pct * 100).toFixed(2)}%`;
     } else if (pct <= FALLBACK_LOSS_CLOSE_PCT) {
       decision.action = 'CLOSE';
       decision.reasoning = `Fallback: auto-close SL ${(pct * 100).toFixed(2)}%`;
     } else {
       decision.action = 'HOLD';
-      decision.reasoning = `Fallback HOLD. Posisi ${(pct * 100).toFixed(2)}% (RSI=${rsiText})`;
+      decision.reasoning = `Fallback HOLD. ${(pct * 100).toFixed(2)}%`;
     }
   } else {
-    if (rsiValue !== null && rsiValue < 45) { decision.action = 'BUY'; decision.reasoning = `Fallback BUY. RSI=${rsiText}, ${macdText}`; }
-    else if (rsiValue !== null && rsiValue > 55) { decision.action = 'SELL'; decision.reasoning = `Fallback SELL. RSI=${rsiText}, ${macdText}`; }
+    if (rsiValue !== null && rsiValue < 45) { decision.action = 'BUY'; decision.reasoning = `Fallback BUY. RSI=${rsiText}`; }
+    else if (rsiValue !== null && rsiValue > 55) { decision.action = 'SELL'; decision.reasoning = `Fallback SELL. RSI=${rsiText}`; }
     else { decision.action = 'HOLD'; decision.reasoning = `Fallback HOLD. RSI=${rsiText}, ${macdText}`; }
   }
   return decision;
@@ -353,6 +387,7 @@ async function runAutonomousAgent() {
     priceHistory.push(currentPrice);
     if (priceHistory.length > MAX_PRICE_HISTORY) priceHistory.shift();
 
+    // Cek TP/SL DULU sebelum analisis baru
     await checkStopLossTakeProfit(currentPrice);
 
     const rsiValue = calculateRSI(priceHistory, RSI_PERIOD);
@@ -366,29 +401,31 @@ async function runAutonomousAgent() {
     const totalCurrentPnl = computeUnrealizedPnl(currentPrice);
 
     const systemPrompt = `
-Kamu adalah "Orion", Autonomous AI Trading Agent AGRESIF untuk Bitcoin (${DISPLAY}).
-Target: maksimalkan frekuensi entry untuk scalping cepat.
+Kamu adalah "Orion", Autonomous AI Trading Agent SCALPING untuk Bitcoin (${DISPLAY}).
+Target: profit kecil cepat ($0.15 per posisi), 8 posisi sekaligus, frekuensi tinggi.
 
-DATA PASAR & POSISI:
+DATA PASAR:
 - Harga: $${currentPrice.toFixed(2)}
 - RSI (14): ${rsiText}
 - EMA (20): $${ema20Value.toFixed(2)} (${emaTrend})
 - MACD: ${macdText}
 - Saldo: $${virtualBalance.toFixed(2)}
-- Posisi aktif: ${activeTrades.length} dari ${MAX_ACTIVE_TRADES}
+- Posisi aktif: ${activeTrades.length}/${MAX_ACTIVE_TRADES}
 - Unrealized PnL: $${totalCurrentPnl.toFixed(2)}
 
-ATURAN AGRESIF:
-1. Jika ada posisi aktif:
-   - "CLOSE" SEGERA jika profit ≥ +1.5% atau loss ≤ −1%.
-   - "HOLD" hanya jika tren sangat kuat searah posisi.
-2. Jika TIDAK ada posisi — PRIORITASKAN ENTRY:
-   - "BUY" jika RSI < 55 ATAU MACD histogram positif ATAU harga > EMA20.
-   - "SELL" jika RSI > 45 ATAU MACD histogram negatif ATAU harga < EMA20.
-   - "HOLD" HANYA jika sinyal benar-benar saling bertentangan.
-3. Agresif tapi disiplin: setiap entry harus punya alasan teknikal jelas.
+SISTEM OTOMATIS:
+- Tiap posisi akan auto-close di +$${TARGET_PROFIT_USD} net profit
+- SL otomatis di ${(STOP_LOSS_PCT * 100).toFixed(2)}% per posisi
+- Kamu tidak perlu mikirin CLOSE — fokus pilih ENTRY
 
-Balas HANYA JSON MURNI:
+ATURAN:
+1. Jika ada posisi aktif → "HOLD" (biarkan sistem TP/SL bekerja).
+2. Jika TIDAK ada posisi → PRIORITASKAN ENTRY:
+   - "BUY" jika RSI < 55 ATAU MACD histogram positif ATAU harga > EMA20
+   - "SELL" jika RSI > 45 ATAU MACD histogram negatif ATAU harga < EMA20
+   - "HOLD" HANYA jika sinyal benar-benar bertentangan
+
+Balas JSON MURNI:
 {
   "action": "BUY" | "SELL" | "HOLD" | "CLOSE",
   "confidence": 0.85,
@@ -403,25 +440,25 @@ Balas HANYA JSON MURNI:
       agentDecision = geminiResult.decision;
       lastGeminiStatus = 'ok';
     } else {
-      console.warn('[Gemini] Semua model & retry gagal, pakai fallback.');
+      console.warn('[Gemini] Fallback mode aktif.');
       agentDecision = fallbackDecision(currentPrice, rsiValue, macdText, rsiText);
       lastGeminiStatus = 'fallback';
     }
 
-    // Eksekusi CLOSE
+    // Eksekusi
     if (agentDecision.action === 'CLOSE' && activeTrades.length > 0) {
+      // Gemini minta close manual
       let closedCount = 0;
       let closeTotalPnl = 0;
       const closedTrades = [];
       for (const trade of [...activeTrades]) {
         const result = await executeBrokerClose(trade.positionId);
-        if (!result.ok) { console.error(`[Close] Gagal ${trade.positionId}: ${result.error}`); continue; }
+        if (!result.ok) continue;
         const { netPnl } = computeNetPnl(trade, currentPrice);
         closeTotalPnl += netPnl;
         closedTrades.push(trade);
         closedCount++;
       }
-
       if (closedCount > 0) {
         virtualBalance += closeTotalPnl;
         activeTrades = activeTrades.filter(t => !closedTrades.includes(t));
@@ -437,10 +474,10 @@ Balas HANYA JSON MURNI:
           price: currentPrice, rsi: rsiValue, ema: ema20Value, macdStatus: macdText,
           decision: 'CLOSE', reasoning: agentDecision.reasoning, pnl: closeTotalPnl
         });
-        // 🔥 Trigger emosi robot
         setCloseEvent(closeTotalPnl, 'GEMINI');
       }
     } else if ((agentDecision.action === 'BUY' || agentDecision.action === 'SELL') && activeTrades.length === 0) {
+      // 🔥 BUKA 8 POSISI SEKALIGUS
       const totalExposure = tradeAmount * MAX_ACTIVE_TRADES;
       if (virtualBalance >= totalExposure) {
         const openedTrades = [];
@@ -475,7 +512,7 @@ Balas HANYA JSON MURNI:
       } else {
         updateMarketMemory({
           price: currentPrice, rsi: rsiValue, ema: ema20Value, macdStatus: macdText,
-          decision: 'HOLD', reasoning: 'Saldo tidak cukup.', pnl: totalCurrentPnl
+          decision: 'HOLD', reasoning: 'Saldo tidak cukup untuk 8 posisi.', pnl: totalCurrentPnl
         });
       }
     } else {
@@ -500,7 +537,9 @@ Balas HANYA JSON MURNI:
       activeTradesCount: activeTrades.length,
       activeTrades,
       totalCurrentPnl,
-      lastCloseEvent,   // <-- dikirim ke frontend
+      targetProfitUsd: TARGET_PROFIT_USD,
+      maxActiveTrades: MAX_ACTIVE_TRADES,
+      lastCloseEvent,
       indicators: {
         rsi: rsiValue === null ? null : parseFloat(rsiValue.toFixed(2)),
         ema20: ema20Value.toFixed(2),
@@ -532,7 +571,7 @@ app.get('/api/start-bot', requireAuth, async (req, res) => {
     if (botInterval) clearInterval(botInterval);
     botInterval = setInterval(runAutonomousAgent, LOOP_INTERVAL_MS);
   }
-  res.json({ success: true, message: 'Orion BTC aktif.' });
+  res.json({ success: true, message: 'Orion BTC aktif (8 posisi, TP $0.15).' });
 });
 
 app.get('/api/stop-bot', requireAuth, (req, res) => {
@@ -549,7 +588,7 @@ app.get('/api/force-close', requireAuth, async (req, res) => {
     const closedTrades = [];
     for (const trade of [...activeTrades]) {
       const result = await executeBrokerClose(trade.positionId);
-      if (!result.ok) { console.error(`[ForceClose] Gagal ${trade.positionId}: ${result.error}`); continue; }
+      if (!result.ok) continue;
       const { netPnl } = computeNetPnl(trade, currentPrice);
       totalPnl += netPnl;
       closedTrades.push(trade);
@@ -580,13 +619,14 @@ app.get('/api/bot-status', (req, res) => {
       activeTradesCount: activeTrades.length,
       isExecutingCycle,
       consecutiveFailures,
-      geminiStatus: lastGeminiStatus
+      geminiStatus: lastGeminiStatus,
+      targetProfitUsd: TARGET_PROFIT_USD,
+      maxActiveTrades: MAX_ACTIVE_TRADES
     }
   });
 });
 
 process.on('SIGINT', () => {
-  console.log('\n[Shutdown] Menghentikan bot BTC...');
   isBotRunning = false;
   if (botInterval) clearInterval(botInterval);
   process.exit(0);
@@ -596,5 +636,8 @@ app.listen(port, () => {
   console.log(`Orion BTC Agent berjalan di port ${port}`);
   console.log(`Live broker: ${ENABLE_LIVE_BROKER ? 'AKTIF ⚠️' : 'simulasi'}`);
   console.log(`Gemini models: ${GEMINI_MODELS.join(' → ')}`);
+  console.log(`Max posisi sekaligus: ${MAX_ACTIVE_TRADES}`);
+  console.log(`Target profit per posisi: $${TARGET_PROFIT_USD} net`);
+  console.log(`SL per posisi: ${(STOP_LOSS_PCT * 100).toFixed(2)}%`);
   if (!CONTROL_API_KEY) console.warn('[WARN] CONTROL_API_KEY tidak diset — endpoint kontrol terbuka!');
 });
