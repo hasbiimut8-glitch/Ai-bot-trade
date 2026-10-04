@@ -1,505 +1,287 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TradeAI - Autonomous Forex Bot by hisamwahyudi</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #07090e; color: #f3f4f6; }
-        .glass-card { background: rgba(17, 24, 39, 0.75); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.08); }
-        .glow-blue { box-shadow: 0 0 35px rgba(59, 130, 246, 0.3); }
-        .glow-green { box-shadow: 0 0 20px rgba(16, 185, 129, 0.2); }
-        
-        @keyframes robotFloat {
-            0%, 100% { transform: translateY(0px) rotate(0deg); }
-            50% { transform: translateY(-6px) rotate(1deg); }
-        }
-        @keyframes eyeLaser {
-            0%, 100% { opacity: 1; filter: drop-shadow(0 0 8px #38bdf8); }
-            50% { opacity: 0.4; filter: drop-shadow(0 0 2px #38bdf8); }
-        }
-        @keyframes dataScan {
-            0% { transform: translateY(-20px); opacity: 0; }
-            50% { opacity: 1; }
-            100% { transform: translateY(20px); opacity: 0; }
-        }
-
-        .robot-animated { animation: robotFloat 3.5s infinite ease-in-out; }
-        .robot-eye { animation: eyeLaser 1.5s infinite ease-in-out; }
-        .scan-line { animation: dataScan 2s infinite linear; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orion AI — Autonomous BTC Trading Agent</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
 </head>
 <body class="min-h-screen pb-28">
 
-    <!-- Header / Navbar Atas -->
-    <header class="flex justify-between items-center px-5 py-4 glass-card border-b border-gray-800/80 sticky top-0 z-50">
-        <div class="flex items-center space-x-2.5">
-            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center glow-blue shadow-lg">
-                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
-            </div>
-            <div>
-                <h1 class="font-bold text-base text-white tracking-tight flex items-center space-x-1">
-                    <span>Orion_AI</span>
-                    <span class="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-semibold">PRO</span>
-                </h1>
-                <p class="text-[10px] text-gray-400">AI Scalper Bot</p>
-            </div>
+<!-- Toast -->
+<div id="toast" class="toast hidden">
+  <div id="toastBox" class="px-4 py-2 rounded-xl text-xs font-semibold bg-red-500/90 text-white shadow-lg"></div>
+</div>
+
+<!-- Header -->
+<header class="flex justify-between items-center px-5 py-4 glass-card border-b border-gray-800/80 sticky top-0 z-40">
+  <div class="flex items-center space-x-2.5">
+    <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-orange-500 to-amber-400 flex items-center justify-center glow-orange shadow-lg">
+      <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+      </svg>
+    </div>
+    <div>
+      <h1 class="font-bold text-base text-white tracking-tight flex items-center space-x-1">
+        <span>Orion_AI</span>
+        <span class="text-[10px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded font-semibold">BTC</span>
+      </h1>
+      <p class="text-[10px] text-gray-400">AI Scalper Agent</p>
+    </div>
+  </div>
+
+  <div class="flex items-center space-x-2">
+    <div id="botBadge" class="px-3 py-1 rounded-full text-xs font-semibold bg-gray-800 text-gray-400 border border-gray-700 flex items-center space-x-1.5">
+      <span class="w-2 h-2 rounded-full bg-gray-500 pulse-dot"></span>
+      <span id="botStatusText">Standby</span>
+    </div>
+    <div class="w-9 h-9 rounded-xl glass-card flex items-center justify-center text-gray-300">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+      </svg>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-md mx-auto p-4 space-y-4">
+
+  <!-- Banner -->
+  <div class="glass-card rounded-2xl p-5 relative overflow-hidden glow-orange border border-orange-500/20">
+    <div class="absolute right-0 top-0 w-40 h-40 bg-gradient-to-br from-orange-500/25 to-amber-500/5 rounded-full blur-2xl pointer-events-none"></div>
+
+    <div class="flex justify-between items-center relative z-10">
+      <div class="w-6/12">
+        <h2 class="text-xl font-bold text-white tracking-tight">Orion siap tempur!</h2>
+        <p class="text-xs text-gray-400 mt-1 leading-relaxed">
+          <span class="text-orange-400 font-semibold">Orion</span> memindai chart BTC & eksekusi posisi otomatis.
+        </p>
+        <div class="flex items-center gap-2 mt-2 flex-wrap">
+          <span id="trendBadge" class="badge-pill">—</span>
+          <span id="confidenceBadge" class="badge-pill">Conf: —</span>
         </div>
+      </div>
 
-        <div class="flex items-center space-x-3">
-            <div id="botBadge" class="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-400 border border-emerald-700/50 flex items-center space-x-1.5 glow-green">
-                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span id="botStatusText">Bot Aktif</span>
-            </div>
-            <button class="w-9 h-9 rounded-xl glass-card flex items-center justify-center text-gray-300 relative hover:text-white transition">
-                <span class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
-            </button>
-            <button class="w-9 h-9 rounded-xl glass-card flex items-center justify-center text-gray-300 hover:text-white transition">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
-            </button>
+      <!-- Robot -->
+      <div class="w-36 h-32 rounded-2xl bg-gradient-to-b from-[#0e1628] to-[#050811] border border-orange-500/40 flex items-center justify-center relative robot-animated shadow-2xl p-1">
+        <div class="absolute inset-1.5 border border-dashed border-orange-500/30 rounded-xl pointer-events-none"></div>
+        <div class="absolute w-24 h-24 bg-orange-500/15 rounded-full blur-xl"></div>
+        <svg class="w-28 h-28 relative z-10" viewBox="0 0 200 200" fill="none">
+          <line x1="100" y1="50" x2="100" y2="28" stroke="#f7931a" stroke-width="4" stroke-linecap="round"/>
+          <circle cx="100" cy="22" r="6" fill="#f7931a" class="robot-eye"/>
+          <rect x="42" y="80" width="16" height="40" rx="6" fill="#1e293b" stroke="#f7931a" stroke-width="3"/>
+          <rect x="142" y="80" width="16" height="40" rx="6" fill="#1e293b" stroke="#f7931a" stroke-width="3"/>
+          <circle cx="50" cy="100" r="3" fill="#fbbf24"/>
+          <circle cx="150" cy="100" r="3" fill="#fbbf24"/>
+          <rect x="52" y="48" width="96" height="96" rx="30" fill="url(#rg)" stroke="#fbbf24" stroke-width="4"/>
+          <rect x="65" y="66" width="70" height="52" rx="14" fill="#020617" stroke="#f7931a" stroke-width="3"/>
+          <line x1="72" y1="92" x2="128" y2="92" stroke="#f7931a" stroke-width="1.5" stroke-opacity=".4" class="scan-line"/>
+          <g class="robot-eye">
+            <circle cx="88" cy="92" r="9" fill="#f7931a"/>
+            <circle cx="88" cy="92" r="4" fill="#fff"/>
+            <circle cx="112" cy="92" r="9" fill="#f7931a"/>
+            <circle cx="112" cy="92" r="4" fill="#fff"/>
+          </g>
+          <path d="M82 122H118" stroke="#f7931a" stroke-width="3.5" stroke-linecap="round"/>
+          <path d="M92 130H108" stroke="#fbbf24" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M60 144L45 170" stroke="#f7931a" stroke-width="5" stroke-linecap="round"/>
+          <path d="M140 144L155 170" stroke="#f7931a" stroke-width="5" stroke-linecap="round"/>
+          <circle cx="43" cy="173" r="5" fill="#fbbf24"/>
+          <circle cx="157" cy="173" r="5" fill="#fbbf24"/>
+          <defs>
+            <linearGradient id="rg" x1="52" y1="48" x2="148" y2="144">
+              <stop stop-color="#1e293b"/><stop offset="1" stop-color="#090d16"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between bg-gray-900/80 rounded-xl p-3.5 border border-gray-800/80 mt-4 relative z-10">
+      <div>
+        <span class="text-[11px] text-gray-400 font-medium block">Total PnL</span>
+        <div class="flex items-center space-x-1.5 mt-0.5">
+          <span id="todayPnL" class="text-base font-bold text-gray-400">+$0.00</span>
+          <span id="profitPercentage" class="text-[10px] text-gray-400 bg-gray-500/10 px-1 py-0.5 rounded font-semibold">(+0.00%)</span>
         </div>
-    </header>
+      </div>
+      <button id="toggleBtn" class="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-orange-600/35">
+        Mulai Bot
+      </button>
+    </div>
+  </div>
 
-    <!-- Konten Utama -->
-    <main class="max-w-md mx-auto p-4 space-y-4">
-
-        <!-- Banner Selamat Datang dengan Ilustrasi Robot Orion -->
-        <div class="glass-card rounded-2xl p-5 relative overflow-hidden glow-blue border border-blue-500/20">
-            <div class="absolute right-0 top-0 w-40 h-40 bg-gradient-to-br from-blue-500/30 to-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
-
-            <div class="flex justify-between items-center relative z-10">
-                <div class="w-5/12">
-                    <h2 class="text-xl font-bold text-white tracking-tight">Halo, Hisam!</h2>
-                    <p class="text-xs text-gray-400 mt-1 leading-relaxed"><span class="text-blue-400 font-semibold">Orion</span> siap memindai chart & eksekusi posisi profit otomatis.</p>
-                </div>
-
-                <!-- Robot Orion -->
-                <div class="w-36 h-32 rounded-2xl bg-gradient-to-b from-[#0e1628] to-[#050811] border border-blue-500/40 flex items-center justify-center relative robot-animated shadow-2xl p-1">
-                    <div class="absolute inset-1.5 border border-dashed border-blue-500/30 rounded-xl pointer-events-none"></div>
-                    <div class="absolute w-24 h-24 bg-blue-500/15 rounded-full blur-xl"></div>
-                    
-                    <svg class="w-28 h-28 relative z-10" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <line x1="100" y1="50" x2="100" y2="28" stroke="#38bdf8" stroke-width="4" stroke-linecap="round"/>
-                        <circle cx="100" cy="22" r="6" fill="#38bdf8" class="robot-eye"/>
-
-                        <rect x="42" y="80" width="16" height="40" rx="6" fill="#1e293b" stroke="#38bdf8" stroke-width="3"/>
-                        <rect x="142" y="80" width="16" height="40" rx="6" fill="#1e293b" stroke="#38bdf8" stroke-width="3"/>
-                        <circle cx="50" cy="100" r="3" fill="#60a5fa"/>
-                        <circle cx="150" cy="100" r="3" fill="#60a5fa"/>
-
-                        <rect x="52" y="48" width="96" height="96" rx="30" fill="url(#robotBodyGrad)" stroke="#60a5fa" stroke-width="4"/>
-                        <rect x="65" y="66" width="70" height="52" rx="14" fill="#020617" stroke="#38bdf8" stroke-width="3"/>
-                        <line x1="72" y1="92" x2="128" y2="92" stroke="#38bdf8" stroke-width="1.5" stroke-opacity="0.4" class="scan-line"/>
-
-                        <g class="robot-eye">
-                            <circle cx="88" cy="92" r="9" fill="#38bdf8"/>
-                            <circle cx="88" cy="92" r="4" fill="#ffffff"/>
-                            <circle cx="112" cy="92" r="9" fill="#38bdf8"/>
-                            <circle cx="112" cy="92" r="4" fill="#ffffff"/>
-                        </g>
-
-                        <path d="M82 122H118" stroke="#38bdf8" stroke-width="3.5" stroke-linecap="round"/>
-                        <path d="M92 130H108" stroke="#60a5fa" stroke-width="2.5" stroke-linecap="round"/>
-
-                        <path d="M60 144L45 170" stroke="#38bdf8" stroke-width="5" stroke-linecap="round"/>
-                        <path d="M140 144L155 170" stroke="#38bdf8" stroke-width="5" stroke-linecap="round"/>
-                        <circle cx="43" cy="173" r="5" fill="#60a5fa"/>
-                        <circle cx="157" cy="173" r="5" fill="#60a5fa"/>
-
-                        <defs>
-                            <linearGradient id="robotBodyGrad" x1="52" y1="48" x2="148" y2="144" gradientUnits="userSpaceOnUse">
-                                <stop stop-color="#1e293b"/>
-                                <stop offset="1" stop-color="#090d16"/>
-                            </linearGradient>
-                        </defs>
-                    </svg>
-                </div>
-            </div>
-
-            <!-- Profit & Tombol Mulai/Stop Bot -->
-            <div class="flex items-center justify-between bg-gray-900/80 rounded-xl p-3.5 border border-gray-800/80 mt-4 relative z-10">
-                <div>
-                    <span class="text-[11px] text-gray-400 font-medium block">Profit Hari Ini!</span>
-                    <div class="flex items-center space-x-1.5 mt-0.5">
-                        <span id="todayPnL" class="text-base font-bold text-emerald-400">+$0.00</span>
-                        <span id="profitPercentage" class="text-[10px] text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded font-semibold">(+0.00%)</span>
-                    </div>
-                </div>
-                <div>
-                    <button id="toggleBtn" onclick="toggleBot()" class="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-blue-600/35">
-                        Mulai Bot
-                    </button>
-                </div>
-            </div>
+  <!-- Market Card -->
+  <div class="glass-card rounded-2xl p-4">
+    <div class="flex justify-between items-center mb-3">
+      <div class="flex items-center space-x-2.5">
+        <div class="w-8 h-8 rounded-xl bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold text-sm border border-orange-500/30">₿</div>
+        <div>
+          <h3 class="font-bold text-white text-sm">BTC/USDT</h3>
+          <p class="text-[10px] text-gray-400">Crypto • <span id="chartStatusLabel" class="text-gray-500">Standby</span></p>
         </div>
+      </div>
+      <div class="text-right">
+        <span id="crypto-price" class="text-base font-bold text-white">$0.00</span>
+        <span id="crypto-change" class="text-xs text-gray-400 block font-semibold">0.00%</span>
+      </div>
+    </div>
 
-        <!-- Market Watch Card (EUR/USD) & Grafik Interaktif -->
-        <div class="glass-card rounded-2xl p-4">
-            <div class="flex justify-between items-center mb-3">
-                <div class="flex items-center space-x-2.5">
-                    <div class="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs border border-blue-500/30">€</div>
-                    <div>
-                        <h3 class="font-bold text-white text-sm flex items-center space-x-1">
-                            <span>EUR/USD</span>
-                            <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                        </h3>
-                        <p class="text-[10px] text-gray-400">Forex Exchange • <span id="chartStatusLabel" class="text-gray-500">Grafik Standby</span></p>
-                    </div>
-                </div>
-                <div class="text-right">
-                    <span id="marketPrice" class="text-base font-bold text-white">$1.0850</span>
-                    <span id="marketChange" class="text-xs text-emerald-400 block font-semibold">+0.00%</span>
-                </div>
-            </div>
+    <!-- Chart.js canvas -->
+    <div class="h-36 w-full bg-gray-900/70 rounded-xl border border-gray-800/80 p-2 relative overflow-hidden">
+      <canvas id="tradingChart"></canvas>
+    </div>
 
-            <!-- Timeframe Selector Tabs -->
-            <div class="flex space-x-1.5 bg-gray-900/90 p-1 rounded-xl mb-3 border border-gray-800">
-                <button class="flex-1 py-1 text-[11px] font-semibold text-gray-400 hover:text-white rounded-lg transition">1m</button>
-                <button class="flex-1 py-1 text-[11px] font-semibold text-gray-400 hover:text-white rounded-lg transition">5m</button>
-                <button class="flex-1 py-1 text-[11px] font-semibold text-gray-400 hover:text-white rounded-lg transition">15m</button>
-                <button class="flex-1 py-1 text-[11px] font-semibold text-blue-400 bg-blue-600/20 border border-blue-500/30 rounded-lg shadow">1h</button>
-                <button class="flex-1 py-1 text-[11px] font-semibold text-gray-400 hover:text-white rounded-lg transition">4h</button>
-                <button class="flex-1 py-1 text-[11px] font-semibold text-gray-400 hover:text-white rounded-lg transition">1d</button>
-            </div>
+    <!-- Indicators -->
+    <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+      <div class="bg-gray-900/80 p-2 rounded-xl border border-gray-800">
+        <span class="text-[9px] text-gray-400 block font-medium">RSI (14)</span>
+        <span id="ind-rsi" class="text-xs font-bold text-amber-400">—</span>
+      </div>
+      <div class="bg-gray-900/80 p-2 rounded-xl border border-gray-800">
+        <span class="text-[9px] text-gray-400 block font-medium">EMA (20)</span>
+        <span id="ind-ema" class="text-xs font-bold text-cyan-400">—</span>
+      </div>
+      <div class="bg-gray-900/80 p-2 rounded-xl border border-gray-800">
+        <span class="text-[9px] text-gray-400 font-medium block">MACD</span>
+        <span id="ind-macd" class="text-[10px] font-bold text-indigo-400 truncate block">—</span>
+      </div>
+    </div>
 
-            <!-- Area Grafik Profesional -->
-            <div class="h-32 w-full bg-gray-900/70 rounded-xl border border-gray-800/80 p-2 flex flex-col justify-between relative overflow-hidden">
-                <div class="absolute inset-0 bg-gradient-to-t from-blue-500/10 via-transparent to-transparent pointer-events-none"></div>
-                <div class="flex justify-between text-[10px] text-gray-500 z-10">
-                    <span>08:00</span>
-                    <span>12:00</span>
-                    <span>16:00</span>
-                    <span>20:00</span>
-                    <span>00:00</span>
-                </div>
-                <div class="w-full h-16 flex items-center z-10">
-                    <svg class="w-full h-full overflow-visible" viewBox="0 0 300 60" preserveAspectRatio="none">
-                        <defs>
-                            <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.4"/>
-                                <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
-                            </linearGradient>
-                        </defs>
-                        <path id="chartArea" d="M0,35 L300,35 L300,60 L0,60 Z" fill="url(#chartGrad)"></path>
-                        <path id="chartLine" d="M0,35 L300,35" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round"></path>
-                    </svg>
-                </div>
-                <div class="flex justify-between text-[10px] text-gray-400 z-10">
-                    <span id="chartMin" class="text-gray-500">Min: 1.0850</span>
-                    <span id="chartMax" class="text-emerald-400 font-semibold">Max: 1.0850</span>
-                </div>
-            </div>
+    <!-- AI Thought -->
+    <div class="bg-gray-900/90 rounded-xl p-3 border border-orange-500/20 mt-3">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-[10px] uppercase tracking-wider text-orange-400 font-bold flex items-center space-x-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-orange-400 pulse-dot"></span>
+          <span>Analisis Orion</span>
+        </span>
+        <span id="activePosIndicator" class="badge-pill">Posisi: 0</span>
+      </div>
+      <p id="ai-status-text" class="text-xs text-gray-300 italic leading-snug">Bot standby. Klik "Mulai Bot" untuk memulai.</p>
+    </div>
+  </div>
 
-            <!-- Bar Indikator Teknikal Real-time -->
-            <div class="grid grid-cols-3 gap-2 mt-3 text-center">
-                <div class="bg-gray-900/80 p-2 rounded-xl border border-gray-800">
-                    <span class="text-[9px] text-gray-400 block font-medium">RSI (14)</span>
-                    <span id="rsiVal" class="text-xs font-bold text-amber-400">50</span>
-                </div>
-                <div class="bg-gray-900/80 p-2 rounded-xl border border-gray-800">
-                    <span class="text-[9px] text-gray-400 block font-medium">EMA (20)</span>
-                    <span id="emaVal" class="text-xs font-bold text-cyan-400">1.0850</span>
-                </div>
-                <div class="bg-gray-900/80 p-2 rounded-xl border border-gray-800">
-                    <span class="text-[9px] text-gray-400 block font-medium">MACD</span>
-                    <span id="macdVal" class="text-[10px] font-bold text-indigo-400 truncate block">NEUTRAL</span>
-                </div>
-            </div>
+  <!-- Stats -->
+  <div class="grid grid-cols-2 gap-3">
+    <div class="glass-card rounded-2xl p-3.5">
+      <div class="flex items-center space-x-2 mb-1">
+        <div class="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs">📊</div>
+        <span class="text-[11px] text-gray-400 font-medium">Total Profit</span>
+      </div>
+      <span id="virtual-pnl" class="text-base font-bold text-gray-400">+$0.00</span>
+      <span id="cycleCountText" class="text-[10px] text-gray-500 block mt-0.5">Siklus: 0</span>
+    </div>
+    <div class="glass-card rounded-2xl p-3.5">
+      <div class="flex items-center space-x-2 mb-1">
+        <div class="w-6 h-6 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center text-xs">💳</div>
+        <span class="text-[11px] text-gray-400 font-medium">Saldo</span>
+      </div>
+      <div class="flex items-baseline justify-between">
+        <span id="balance-display" class="text-base font-bold text-white">$10,000</span>
+        <span id="dynamic-lot" class="text-[9px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded font-bold border border-orange-500/30">0.001</span>
+      </div>
+      <span class="text-[10px] text-orange-400 block mt-0.5">Autoscaling Lot</span>
+    </div>
+    <div class="glass-card rounded-2xl p-3.5">
+      <div class="flex items-center space-x-2 mb-1">
+        <div class="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs">🛡️</div>
+        <span class="text-[11px] text-gray-400 font-medium">Unrealized PnL</span>
+      </div>
+      <span id="floating-pnl" class="text-base font-bold text-white">$0.00</span>
+      <span class="text-[10px] text-indigo-400 block mt-0.5">Posisi aktif</span>
+    </div>
+    <div class="glass-card rounded-2xl p-3.5">
+      <div class="flex items-center space-x-2 mb-1">
+        <div class="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs">⏱️</div>
+        <span class="text-[11px] text-gray-400 font-medium">Uptime</span>
+      </div>
+      <span id="botUptime" class="text-sm font-bold text-white">0j 0m</span>
+      <span class="text-[10px] text-purple-400 block mt-0.5">Loop 25s</span>
+    </div>
+  </div>
 
-            <!-- Kotak Pikiran AI Orion -->
-            <div class="bg-gray-900/90 rounded-xl p-3 border border-blue-500/20 mt-3">
-                <div class="flex items-center justify-between mb-1">
-                    <span class="text-[10px] uppercase tracking-wider text-blue-400 font-bold flex items-center space-x-1">
-                        <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping"></span>
-                        <span>Analisis Orion AI:</span>
-                    </span>
-                    <span id="activePosIndicator" class="text-[10px] text-yellow-400 font-semibold bg-yellow-500/10 px-2 py-0.5 rounded border border-yellow-500/20">Posisi: Tidak Ada</span>
-                </div>
-                <p id="aiAnalysis" class="text-xs text-gray-300 italic leading-snug">Bot sedang standby. Klik "Mulai Bot" untuk mengaktifkan pemindaian.</p>
-            </div>
-        </div>
+  <!-- Active Trades -->
+  <div id="activeTradesCard" class="glass-card rounded-2xl p-4 hidden">
+    <div class="flex justify-between items-center mb-3">
+      <h3 class="font-bold text-sm text-white">📌 Posisi Aktif</h3>
+      <span id="activeTradesCount" class="text-[10px] font-bold bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full border border-orange-500/30">0</span>
+    </div>
+    <div id="activeTradesList" class="space-y-2"></div>
+  </div>
 
-        <!-- 4 Kotak Statistik -->
-        <div class="grid grid-cols-2 gap-3">
-            <div class="glass-card rounded-2xl p-3.5">
-                <div class="flex items-center space-x-2 mb-1">
-                    <div class="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs">📊</div>
-                    <span class="text-[11px] text-gray-400 font-medium">Total Profit</span>
-                </div>
-                <span id="boxTotalProfit" class="text-base font-bold text-emerald-400">+$0.00</span>
-                <span class="text-[10px] text-gray-500 block mt-0.5">Siklus Otonom</span>
-            </div>
-            <div class="glass-card rounded-2xl p-3.5">
-                <div class="flex items-center justify-between mb-1">
-                    <div class="flex items-center space-x-2">
-                        <div class="w-6 h-6 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs">💳</div>
-                        <span class="text-[11px] text-gray-400 font-medium">Saldo</span>
-                    </div>
-                </div>
-                <div class="flex items-baseline justify-between">
-                    <span id="virtualBalance" class="text-base font-bold text-white">$10,000.00</span>
-                    <span id="boxLotBadge" class="text-[9px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-bold border border-blue-500/30">0.10 Lot</span>
-                </div>
-                <span class="text-[10px] text-blue-400 block mt-0.5">Autoscaling Lot</span>
-            </div>
-            <div class="glass-card rounded-2xl p-3.5">
-                <div class="flex items-center space-x-2 mb-1">
-                    <div class="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs">🛡️</div>
-                    <span class="text-[11px] text-gray-400 font-medium">Status Risiko</span>
-                </div>
-                <span class="text-base font-bold text-white">Dynamic 5%</span>
-                <span class="text-[10px] text-indigo-400 block mt-0.5">Money Management</span>
-            </div>
-            <div class="glass-card rounded-2xl p-3.5">
-                <div class="flex items-center space-x-2 mb-1">
-                    <div class="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs">⏱️</div>
-                    <span class="text-[11px] text-gray-400 font-medium">Bot Uptime</span>
-                </div>
-                <span id="botUptime" class="text-sm font-bold text-white">0j 0m</span>
-                <span class="text-[10px] text-purple-400 block mt-0.5">Real-time Loop</span>
-            </div>
-        </div>
+  <!-- History -->
+  <div class="glass-card rounded-2xl p-4">
+    <div class="flex justify-between items-center mb-3">
+      <h3 class="font-bold text-sm text-white">⚡ Aktivitas Transaksi</h3>
+      <div class="flex items-center gap-2">
+        <span class="text-[11px] text-orange-400 flex items-center space-x-1 bg-orange-500/10 px-2 py-0.5 rounded-full border border-orange-500/20">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot"></span>
+          <span id="liveIndicator">Standby</span>
+        </span>
+        <button id="btn-clear-history" class="text-[10px] text-gray-400 hover:text-white">Clear</button>
+      </div>
+    </div>
+    <div class="max-h-56 overflow-y-auto pr-1 no-scrollbar">
+      <table class="w-full text-[10px]">
+        <thead class="text-gray-500">
+          <tr class="border-b border-gray-800">
+            <th class="text-left py-1 px-2">Waktu</th>
+            <th class="text-left py-1 px-2">Tipe</th>
+            <th class="text-left py-1 px-2">Harga</th>
+            <th class="text-left py-1 px-2">PnL</th>
+            <th class="text-left py-1 px-2">Saldo</th>
+          </tr>
+        </thead>
+        <tbody id="history-table-body">
+          <tr><td colspan="5" class="py-3 text-center text-gray-500 italic">Belum ada riwayat transaksi.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 
-        <!-- Aktivitas Bot -->
-        <div class="glass-card rounded-2xl p-4">
-            <div class="flex justify-between items-center mb-3">
-                <h3 class="font-bold text-sm text-white flex items-center space-x-1.5">
-                    <span>⚡ Aktivitas Transaksi</span>
-                </h3>
-                <span class="text-[11px] text-blue-400 flex items-center space-x-1 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                    <span id="liveIndicator">Standby</span>
-                </span>
-            </div>
-            <div id="tradeHistoryList" class="space-y-2 max-h-56 overflow-y-auto pr-1">
-                <p class="text-xs text-gray-500 text-center py-6">Belum ada aktivitas transaksi.</p>
-            </div>
-        </div>
+  <!-- Market Memory -->
+  <div class="glass-card rounded-2xl p-4">
+    <div class="flex justify-between items-center mb-3">
+      <h3 class="font-bold text-sm text-white">🧠 Memori Keputusan AI</h3>
+      <span id="memoryCount" class="text-[10px] text-gray-400">0/10</span>
+    </div>
+    <div id="marketMemoryList" class="space-y-1.5 max-h-52 overflow-y-auto pr-1 no-scrollbar">
+      <p class="text-xs text-gray-500 text-center py-4">Belum ada memori.</p>
+    </div>
+  </div>
 
-    </main>
+  <!-- Footer -->
+  <div class="text-center text-[10px] text-gray-600 pb-2">
+    <p>Orion AI • Last update: <span id="lastUpdate">—</span></p>
+  </div>
+</main>
 
-    <!-- Navbar Bawah -->
-    <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto glass-card border-t border-gray-800/80 px-4 py-2.5 flex justify-around items-center z-50 rounded-t-2xl shadow-2xl">
-        <button class="flex flex-col items-center space-y-1 text-blue-400">
-            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
-            <span class="text-[10px] font-bold">Beranda</span>
-        </button>
-        <button class="flex flex-col items-center space-y-1 text-gray-400 hover:text-white transition">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
-            <span class="text-[10px] font-medium">Pasar</span>
-        </button>
-        <button class="flex flex-col items-center space-y-1 text-gray-400 hover:text-white transition">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
-            <span class="text-[10px] font-medium">Bot</span>
-        </button>
-        <button class="flex flex-col items-center space-y-1 text-gray-400 hover:text-white transition">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
-            <span class="text-[10px] font-medium">Portofolio</span>
-        </button>
-        <button class="flex flex-col items-center space-y-1 text-gray-400 hover:text-white transition">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-            <span class="text-[10px] font-medium">Profil</span>
-        </button>
-    </nav>
+<!-- Bottom Nav -->
+<nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto glass-card border-t border-gray-800/80 px-4 py-2.5 flex justify-around items-center z-40 rounded-t-2xl shadow-2xl">
+  <button class="nav-btn nav-btn-active">
+    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
+    <span class="text-[10px] font-bold">Beranda</span>
+  </button>
+  <button class="nav-btn">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
+    <span class="text-[10px] font-medium">Pasar</span>
+  </button>
+  <button class="nav-btn">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+    <span class="text-[10px] font-medium">Bot</span>
+  </button>
+  <button class="nav-btn">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
+    <span class="text-[10px] font-medium">Portofolio</span>
+  </button>
+  <button class="nav-btn">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+    <span class="text-[10px] font-medium">Profil</span>
+  </button>
+</nav>
 
-    <script>
-        let isRunning = false;
-        let startTime = null;
-        let chartPoints = [35, 35, 35, 35, 35, 35, 35, 35, 35, 35];
-
-        function updateChartLine(currentPrice, running) {
-            const lineElem = document.getElementById('chartLine');
-            const areaElem = document.getElementById('chartArea');
-            const chartStatus = document.getElementById('chartStatusLabel');
-
-            if (!running) {
-                chartStatus.innerText = "Grafik Standby";
-                const flatPath = `M0,35 L50,35 L100,35 L150,35 L200,35 L250,35 L300,35`;
-                lineElem.setAttribute('d', flatPath);
-                areaElem.setAttribute('d', `${flatPath} L300,60 L0,60 Z`);
-                return;
-            }
-
-            chartStatus.innerText = "Live Real-time Trading";
-
-            const baseVal = parseFloat(currentPrice) || 1.0850;
-            const randomOffset = (Math.random() - 0.48) * 12;
-            let newY = 30 + randomOffset;
-            newY = Math.max(10, Math.min(50, newY));
-
-            chartPoints.shift();
-            chartPoints.push(newY);
-
-            const step = 300 / (chartPoints.length - 1);
-            let pathD = `M 0 ${chartPoints[0]}`;
-            for (let i = 1; i < chartPoints.length; i++) {
-                const x = i * step;
-                const prevX = (i - 1) * step;
-                const xc = (prevX + x) / 2;
-                const yc = (chartPoints[i - 1] + chartPoints[i]) / 2;
-                pathD += ` Q ${prevX} ${chartPoints[i - 1]}, ${xc} ${yc}`;
-            }
-
-            lineElem.setAttribute('d', pathD);
-            areaElem.setAttribute('d', `${pathD} L300,60 L0,60 Z`);
-
-            const minP = (baseVal - 0.0025).toFixed(4);
-            const maxP = (baseVal + 0.0025).toFixed(4);
-            document.getElementById('chartMin').innerText = `Min: ${minP}`;
-            document.getElementById('chartMax').innerText = `Max: ${maxP}`;
-        }
-
-        async function fetchStatus() {
-            try {
-                const res = await fetch('/api/bot-status');
-                const json = await res.json();
-                isRunning = json.running;
-                updateUI(json.data);
-            } catch (e) {
-                console.error("Gagal mengambil status bot:", e);
-            }
-        }
-
-        function updateUI(data) {
-            const badge = document.getElementById('botBadge');
-            const statusText = document.getElementById('botStatusText');
-            const toggleBtn = document.getElementById('toggleBtn');
-            const liveIndicator = document.getElementById('liveIndicator');
-
-            if (isRunning) {
-                if (!startTime) startTime = Date.now();
-                badge.className = "px-3 py-1 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-400 border border-emerald-700/50 flex items-center space-x-1.5 glow-green";
-                statusText.innerText = "Bot Aktif";
-                toggleBtn.innerText = "Hentikan Bot";
-                toggleBtn.className = "px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-red-600/30";
-                liveIndicator.innerText = "Live";
-                
-                const diffSec = Math.floor((Date.now() - startTime) / 1000);
-                const hours = Math.floor(diffSec / 3600);
-                const mins = Math.floor((diffSec % 3600) / 60);
-                document.getElementById('botUptime').innerText = `${hours}j ${mins}m`;
-            } else {
-                startTime = null;
-                badge.className = "px-3 py-1 rounded-full text-xs font-semibold bg-red-950/80 text-red-400 border border-red-700/50 flex items-center space-x-1.5";
-                statusText.innerText = "Bot Standby";
-                toggleBtn.innerText = "Mulai Bot";
-                toggleBtn.className = "px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-blue-600/30";
-                liveIndicator.innerText = "Standby";
-                document.getElementById('botUptime').innerText = "0j 0m";
-            }
-
-            if (data) {
-                const currentPriceStr = data.price || '1.0850';
-                document.getElementById('marketPrice').innerText = `$${currentPriceStr}`;
-                
-                updateChartLine(currentPriceStr, isRunning);
-
-                // Update Indikator Teknikal
-                if (data.indicators) {
-                    document.getElementById('rsiVal').innerText = data.indicators.rsi;
-                    document.getElementById('emaVal').innerText = data.indicators.ema20;
-                    
-                    const macdElem = document.getElementById('macdVal');
-                    if (data.indicators.macdStatus.includes('GOLDEN')) {
-                        macdElem.innerText = 'GOLDEN ⬆';
-                        macdElem.className = 'text-[10px] font-bold text-emerald-400 truncate block';
-                    } else if (data.indicators.macdStatus.includes('DEATH')) {
-                        macdElem.innerText = 'DEATH ⬇';
-                        macdElem.className = 'text-[10px] font-bold text-red-400 truncate block';
-                    } else {
-                        macdElem.innerText = 'NEUTRAL';
-                        macdElem.className = 'text-[10px] font-bold text-indigo-400 truncate block';
-                    }
-                }
-
-                // Update Autoscaling Lot
-                if (data.dynamicLot) {
-                    document.getElementById('boxLotBadge').innerText = `${data.dynamicLot} Lot`;
-                }
-
-                const changeElem = document.getElementById('marketChange');
-                const changeVal = data.change || 0;
-                changeElem.innerText = `${changeVal >= 0 ? '+' : ''}${changeVal}%`;
-                changeElem.className = `text-xs block font-semibold ${changeVal >= 0 ? 'text-emerald-400' : 'text-red-400'}`;
-
-                const balance = data.balance || 10000;
-                document.getElementById('virtualBalance').innerText = `$${balance.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-
-                const totalProfit = balance - 10000;
-                const profitPct = ((totalProfit / 10000) * 100).toFixed(2);
-                const profitElem = document.getElementById('todayPnL');
-                const profitPctElem = document.getElementById('profitPercentage');
-                const boxProfitElem = document.getElementById('boxTotalProfit');
-                
-                const profitText = `${totalProfit >= 0 ? '+' : ''}$${totalProfit.toFixed(2)}`;
-                profitElem.innerText = profitText;
-                boxProfitElem.innerText = profitText;
-                profitPctElem.innerText = `(${profitPct >= 0 ? '+' : ''}${profitPct}%)`;
-
-                const profitColor = totalProfit >= 0 ? 'text-emerald-400' : 'text-red-400';
-                profitElem.className = `text-base font-bold ${profitColor}`;
-                boxProfitElem.className = `text-base font-bold ${profitColor}`;
-
-                const posIndicator = document.getElementById('activePosIndicator');
-                if (data.activeTrade) {
-                    const tradeLot = data.activeTrade.lot || data.dynamicLot || 0.01;
-                    posIndicator.innerText = `Posisi: ${data.activeTrade.type} (${tradeLot} Lot | $${(data.currentPnl || 0).toFixed(2)})`;
-                    posIndicator.className = `text-[10px] font-semibold px-2 py-0.5 rounded border ${data.currentPnl >= 0 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 'text-red-400 bg-red-500/10 border-red-500/20'}`;
-                } else {
-                    posIndicator.innerText = "Posisi: Tidak Ada";
-                    posIndicator.className = "text-[10px] text-yellow-400 font-semibold bg-yellow-500/10 px-2 py-0.5 rounded border border-yellow-500/20";
-                }
-
-                if (data.analysis) {
-                    document.getElementById('aiAnalysis').innerText = data.analysis;
-                }
-
-                const historyContainer = document.getElementById('tradeHistoryList');
-                if (data.tradeHistory && data.tradeHistory.length > 0) {
-                    historyContainer.innerHTML = data.tradeHistory.map(item => {
-                        const isClose = item.type.includes('CLOSE');
-                        const pnlColor = item.pnl >= 0 ? 'text-emerald-400' : 'text-red-400';
-                        const typeColor = item.type.includes('BUY') || item.type.includes('OPEN BUY') ? 'text-emerald-400 bg-emerald-500/10' : 'text-red-400 bg-red-500/10';
-                        return `
-                            <div class="flex justify-between items-center p-3 bg-gray-900/60 rounded-xl border border-gray-800 text-xs">
-                                <div class="flex items-center space-x-2.5">
-                                    <div class="w-7 h-7 rounded-lg ${typeColor} flex items-center justify-center font-bold text-[10px]">
-                                        ${item.type.includes('BUY') ? 'BUY' : 'SELL'}
-                                    </div>
-                                    <div>
-                                        <span class="font-bold text-white">${item.type}</span>
-                                        <span class="text-gray-400 block text-[10px]">${item.time} • Masuk: $${item.open}</span>
-                                    </div>
-                                </div>
-                                <div class="text-right">
-                                    <span class="font-bold ${pnlColor}">${isClose ? (item.pnl >= 0 ? '+$' : '-$') + Math.abs(item.pnl).toFixed(2) : 'Aktif'}</span>
-                                    <span class="text-gray-400 block text-[10px]">Saldo: $${Math.round(item.balanceAfter).toLocaleString()}</span>
-                                </div>
-                            </div>
-                        `;
-                    }).join('');
-                }
-            }
-        }
-
-        async function toggleBot() {
-            const endpoint = isRunning ? '/api/stop-bot' : '/api/start-bot';
-            try {
-                const res = await fetch(endpoint);
-                const json = await res.json();
-                if (json.success) {
-                    fetchStatus();
-                }
-            } catch (e) {
-                console.error("Gagal mengubah status bot:", e);
-            }
-        }
-
-        setInterval(fetchStatus, 3000);
-        fetchStatus();
-    </script>
+<script src="/app.js"></script>
 </body>
 </html>
