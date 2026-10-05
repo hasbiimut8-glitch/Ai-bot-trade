@@ -21,13 +21,13 @@ const SYMBOL = 'BTCUSDT';
 const ETH_SYMBOL = 'ETHUSDT';
 const DISPLAY = 'BTC/USDT';
 
-// 🔥 Model Groq — cepat, gratis, API key tidak expire
+// 🔥 Model Groq VALID per Okt 2026 — llama-3.3-70b-versatile sudah deprecated
 const GROQ_MODELS_PRIMARY = [
-  'llama-3.3-70b-versatile',
+  'openai/gpt-oss-120b',
 ];
 const GROQ_MODELS_FALLBACK = [
-  'llama-3.1-8b-instant',
-  'mixtral-8x7b-32768',
+  'openai/gpt-oss-20b',
+  'qwen/qwen3.6-27b',
 ];
 
 const ENABLE_LIVE_BROKER = process.env.ENABLE_LIVE_BROKER === 'true';
