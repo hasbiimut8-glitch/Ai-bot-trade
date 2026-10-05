@@ -9,12 +9,19 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // ================== CONFIG ==================
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-if (!GEMINI_API_KEY) { console.error("FATAL: GEMINI_API_KEY tidak diset."); process.exit(1); }
+const OPENROUTER_KEY = process.env.OPENROUTER_KEY;
 
-// 🔥 REST API LANGSUNG — bypass bug SDK AQ. key
-const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-
+// Di callSingleModel, ganti URL dan headers:
+const url = 'https://openrouter.ai/api/v1/chat/completions';
+headers: {
+  'Authorization': `Bearer ${OPENROUTER_KEY}`,
+  'Content-Type': 'application/json',
+}
+body: JSON.stringify({
+  model: 'google/gemini-2.5-flash',   // atau model lain
+  messages: [{ role: 'user', content: systemPrompt }],
+  response_format: { type: 'json_object' },
+})
 const SYMBOL = 'BTCUSDT';
 const ETH_SYMBOL = 'ETHUSDT';
 const DISPLAY = 'BTC/USDT';
