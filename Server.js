@@ -11,10 +11,7 @@ const port = process.env.PORT || 3000;
 
 // ================== CONFIG ==================
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-if (!GEMINI_API_KEY) {
-  console.error("FATAL: GEMINI_API_KEY tidak diset.");
-  process.exit(1);
-}
+if (!GEMINI_API_KEY) { console.error("FATAL: GEMINI_API_KEY tidak diset."); process.exit(1); }
 
 const ai = new GoogleGenAI({
   apiKey: GEMINI_API_KEY,
@@ -23,11 +20,11 @@ const ai = new GoogleGenAI({
 });
 
 const SYMBOL = 'BTCUSDT';
+const ETH_SYMBOL = 'ETHUSDT';
 const DISPLAY = 'BTC/USDT';
-const CC_FSYM = 'BTC';
-const CC_TSYMS = 'USDT';
 
-const GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-2.0-flash'];
+const GEMINI_MODELS_PRIMARY = ['gemini-2.5-flash', 'gemini-3.8-flash'];
+const GEMINI_MODELS_FALLBACK = ['gemini-2.0-flash'];
 
 const ENABLE_LIVE_BROKER = process.env.ENABLE_LIVE_BROKER === 'true';
 const META_API_TOKEN = process.env.META_API_TOKEN || '';
@@ -35,49 +32,74 @@ const META_ACCOUNT_ID = process.env.META_ACCOUNT_ID || '';
 const META_API_BASE = process.env.META_API_BASE || 'https://mt-client-api-v1.agiliumtrade.ai';
 const CONTROL_API_KEY = process.env.CONTROL_API_KEY || '';
 
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+const TELEGRAM_ENABLED = TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID;
+
 if (ENABLE_LIVE_BROKER && (!META_API_TOKEN || !META_ACCOUNT_ID)) {
-  console.error("FATAL: ENABLE_LIVE_BROKER=true tapi META_API_TOKEN / META_ACCOUNT_ID kosong.");
+  console.error("FATAL: ENABLE_LIVE_BROKER=true tapi token/kredensial kosong.");
   process.exit(1);
 }
 
-// ================== CONSTANTS (TUNED UNTUK SCALPING KILAT) ==================
-const LOOP_INTERVAL_MS = 25000;
-
-// 🔥 8 POSISI SEKALIGUS
-const MAX_ACTIVE_TRADES = 8;
-
+// ================== STRATEGI BASE ==================
+const LOOP_INTERVAL_MS = 180000;
+const MAX_ACTIVE_TRADES = 4;
 const MAX_PRICE_HISTORY = 100;
 const MAX_MARKET_MEMORY = 10;
-const MAX_TRADE_HISTORY = 25;
+const MAX_TRADE_HISTORY = 30;
 
-// Notional per posisi = 1% × saldo = $100 (dari saldo awal $10,000)
-// 8 posisi × $100 = $800 total exposure (8% dari saldo) — aman
-const RISK_PER_TRADE = 0.01;
-
-// Fee: 0.04% per sisi (realistis untuk crypto exchange tier normal)
-// Total round-trip = 0.08% × $100 = $0.08
+const RISK_PER_TRADE = 0.02;
 const TAKER_FEE = 0.0004;
 const SLIPPAGE = 0.0002;
 
-// 🔥 TARGET PROFIT NET setelah fee, per posisi
-// $0.15 net → butuh gerakan BTC ~0.23% (realistis dalam 1–5 menit)
-const TARGET_PROFIT_USD = 0.15;
+// ATR multipliers (auto-tunable)
+let dynamicParams = {
+  atrSlMult: 1.5,
+  atrTpMult: 2.5,
+  minAlignment: 70,
+  minConfidence: 0.65,
+  kellyFraction: 0.25
+};
 
-// Safety net SL: -0.2% per posisi (rugi max ~$0.28 net per posisi)
-const STOP_LOSS_PCT = -0.002;
+const FALLBACK_SL_PCT = -0.010;
+const FALLBACK_TP_PCT = 0.015;
+const HARD_TP_CAP_PCT = 0.04;
 
-// Hard cap TP persentase (jaga-jaga kalau BTC gerak liar)
-const TAKE_PROFIT_PCT = 0.015;
+const CHANDELIER_ATR_MULT = 2.0;
+const CHANDELIER_ACTIVATION_PCT = 0.008;
 
-// Fallback thresholds saat Gemini error
-const FALLBACK_PROFIT_CLOSE_PCT = 0.003;
-const FALLBACK_LOSS_CLOSE_PCT = -0.002;
+const FALLBACK_PROFIT_CLOSE_PCT = 0.010;
+const FALLBACK_LOSS_CLOSE_PCT = -0.010;
+
+const MAX_CUMULATIVE_FEE_PCT = 0.03;
+const DAILY_LOSS_LIMIT_PCT = 0.05;
+const MAX_CONSECUTIVE_LOSSES_BEFORE_COOLDOWN = 2;
+
+const KELLY_MIN_TRADES = 10;
+const KELLY_MIN_SIZE = 0.005;
+const KELLY_MAX_SIZE = 0.03;
+
+const CONFIDENCE_HIGH = 0.75;
+const CONFIDENCE_LOW = 0.4;
 
 const RSI_PERIOD = 14;
+const BB_PERIOD = 20;
+const BB_STDDEV = 2;
 const EMA_FAST = 12;
 const EMA_SLOW = 26;
 const EMA_SIGNAL = 9;
+const ATR_PERIOD = 14;
 const MAX_CONSECUTIVE_FAILURES = 5;
+
+// Scale-in: buka posisi bertahap
+const SCALE_IN_STEPS = 2;
+const SCALE_IN_DELAY_MS = 2000;
+
+// Event calendar — event high impact (dalam format YYYY-MM-DD UTC)
+const HIGH_IMPACT_EVENTS = [
+  // Update manual atau via env. Format: '2026-10-15', '2026-11-05', dll.
+  // Ini contoh — user bisa tambahkan sendiri
+];
 
 // ================== STATE ==================
 let isBotRunning = false;
@@ -93,6 +115,85 @@ let marketMemory = [];
 let consecutiveFailures = 0;
 let lastGeminiStatus = 'unknown';
 let lastCloseEvent = null;
+let cumulativeFee = 0;
+let cumulativeTrades = 0;
+let geminiSuccessCount = 0;
+let geminiFailCount = 0;
+
+let consecutiveLosses = 0;
+let consecutiveWins = 0;
+let peakBalance = 10000;
+let maxDrawdown = 0;
+let allPnls = [];
+
+// Daily
+let dailyStartBalance = 10000;
+let dailyStartDate = new Date().toDateString();
+let dailyPnl = 0;
+let dailyTrades = 0;
+
+// Ensemble strategies
+let ensembleStats = {
+  trend_follower: { wins: 0, losses: 0 },
+  mean_reverter: { wins: 0, losses: 0 },
+  momentum: { wins: 0, losses: 0 },
+  breakout: { wins: 0, losses: 0 },
+  order_flow: { wins: 0, losses: 0 }
+};
+
+// Confidence calibration
+let confidenceCalibration = {
+  low: { wins: 0, losses: 0 },      // 0.4-0.6
+  mid: { wins: 0, losses: 0 },      // 0.6-0.75
+  high: { wins: 0, losses: 0 }      // 0.75+
+};
+
+// Self-learning patterns
+let patternStats = {
+  bySignature: {},
+  bySession: { ASIA: { wins: 0, losses: 0 }, LONDON: { wins: 0, losses: 0 }, NY: { wins: 0, losses: 0 } },
+  byRegime: {}
+};
+
+// Backtest results
+let lastBacktest = null;
+
+// Market context
+let marketContext = {
+  atr: null, atrPct: null,
+  htfTrend: 'unknown', htfChangePct: 0,
+  htf1hTrend: 'unknown',
+  volumeRatio: null,
+  bbUpper: null, bbLower: null, bbMiddle: null, bbWidth: null, bbPosition: null,
+  support: null, resistance: null,
+  regime: 'unknown',
+  fundingRate: null,
+  openInterest: null,
+  oiChangePct: null,
+  fearGreed: null, fearGreedLabel: 'N/A',
+  rsiDivergence: 'none',
+  candlePattern: 'none',
+  orderBookImbalance: null,
+  orderBookBidWall: null,
+  orderBookAskWall: null,
+  cvd1m: null,
+  cvdTrend: 'unknown',
+  alignmentScore: null,
+  alignmentDetails: {},
+  dominantDirection: 'NEUTRAL',
+  session: 'unknown',
+  liquidationZones: [],
+  nearestLongLiq: null,
+  nearestShortLiq: null,
+  // LEVEL 5:
+  ethTrend: 'unknown',           // ETH 15m trend
+  ethBtcRatio: null,              // ETH/BTC ratio
+  correlation: null,              // correlation BTC vs ETH (rolling)
+  btcDominanceTrend: 'unknown',   // via CoinGecko
+  eventRiskLevel: 'LOW',          // LOW | MEDIUM | HIGH
+  nextEventName: null,
+  featureScore: 0                 // ML-style weighted score
+};
 
 // ================== HELPERS ==================
 function applySlippage(price, side) {
@@ -115,8 +216,7 @@ function calculateRSI(prices, period = 14) {
     const diff = prices[i] - prices[i - 1];
     if (diff >= 0) gains += diff; else losses -= diff;
   }
-  let avgGain = gains / period;
-  let avgLoss = losses / period;
+  let avgGain = gains / period, avgLoss = losses / period;
   for (let i = period + 1; i < prices.length; i++) {
     const diff = prices[i] - prices[i - 1];
     const gain = diff > 0 ? diff : 0;
@@ -126,6 +226,13 @@ function calculateRSI(prices, period = 14) {
   }
   if (avgLoss === 0) return 100;
   return 100 - (100 / (1 + avgGain / avgLoss));
+}
+
+function calculateRSISeries(prices, period = 14) {
+  if (prices.length < period + 1) return [];
+  const rsis = [];
+  for (let i = period; i < prices.length; i++) rsis.push(calculateRSI(prices.slice(0, i + 1), period));
+  return rsis;
 }
 
 function calculateMACDSeries(prices) {
@@ -140,16 +247,837 @@ function calculateMACDSeries(prices) {
   const macd = macdSeries[macdSeries.length - 1];
   const histogram = macd - signal;
   let status = 'NEUTRAL';
-  if (macd > 0 && histogram > 0) status = 'GOLDEN CROSS (Bullish Momentum)';
-  else if (macd < 0 && histogram < 0) status = 'DEATH CROSS (Bearish Momentum)';
+  if (macd > 0 && histogram > 0) status = 'GOLDEN CROSS (Bullish)';
+  else if (macd < 0 && histogram < 0) status = 'DEATH CROSS (Bearish)';
   return { macd, signal, histogram, status };
 }
 
-function calculateDynamicRisk(balance, currentPrice) {
-  const tradeAmount = Math.max(50, balance * RISK_PER_TRADE);
-  let lot = parseFloat((tradeAmount / currentPrice).toFixed(6));
+function calculateATR(highs, lows, closes, period = 14) {
+  if (!highs || highs.length < period + 1) return null;
+  const trs = [];
+  for (let i = 1; i < highs.length; i++) {
+    trs.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1])));
+  }
+  if (trs.length < period) return null;
+  let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < trs.length; i++) atr = (atr * (period - 1) + trs[i]) / period;
+  return atr;
+}
+
+function calculateBollingerBands(prices, period = 20, mult = 2) {
+  if (!prices || prices.length < period) return null;
+  const slice = prices.slice(-period);
+  const sma = slice.reduce((a, b) => a + b, 0) / period;
+  const variance = slice.reduce((s, p) => s + Math.pow(p - sma, 2), 0) / period;
+  const stddev = Math.sqrt(variance);
+  return { upper: sma + mult * stddev, middle: sma, lower: sma - mult * stddev, width: (2 * mult * stddev) / sma };
+}
+
+function findSupportResistance(highs, lows, lookback = 50) {
+  if (!highs || highs.length < 10) return { support: null, resistance: null };
+  return { support: Math.min(...lows.slice(-lookback)), resistance: Math.max(...highs.slice(-lookback)) };
+}
+
+function detectMarketRegime(prices, atr) {
+  if (prices.length < 30 || !atr) return 'unknown';
+  const recent = prices.slice(-20);
+  const older = prices.slice(-40, -20);
+  if (older.length < 10) return 'unknown';
+  const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+  const olderAvg = older.reduce((a, b) => a + b, 0) / older.length;
+  const changePct = (recentAvg - olderAvg) / olderAvg;
+  if (Math.abs(changePct) > 0.005) return changePct > 0 ? 'TRENDING_UP' : 'TRENDING_DOWN';
+  return 'RANGING';
+}
+
+function detectRSIDivergence(prices, rsiSeries, lookback = 20) {
+  if (prices.length < lookback + 5 || rsiSeries.length < lookback) return 'none';
+  const priceSlice = prices.slice(-lookback);
+  const rsiSlice = rsiSeries.slice(-lookback);
+  const half = Math.floor(lookback / 2);
+  const pRMin = Math.min(...priceSlice.slice(half)), pOMin = Math.min(...priceSlice.slice(0, half));
+  const rRMin = Math.min(...rsiSlice.slice(half)), rOMin = Math.min(...rsiSlice.slice(0, half));
+  const pRMax = Math.max(...priceSlice.slice(half)), pOMax = Math.max(...priceSlice.slice(0, half));
+  const rRMax = Math.max(...rsiSlice.slice(half)), rOMax = Math.max(...rsiSlice.slice(0, half));
+  if (pRMin < pOMin && rRMin > rOMin + 2) return 'bullish';
+  if (pRMax > pOMax && rRMax < rOMax - 2) return 'bearish';
+  return 'none';
+}
+
+function detectCandlePattern(klines) {
+  if (!klines || klines.length < 3) return 'none';
+  const c1 = klines[klines.length - 2], c2 = klines[klines.length - 1];
+  const body = (k) => Math.abs(k.close - k.open);
+  const range = (k) => k.high - k.low;
+  const c2Body = body(c2), c2Range = range(c2);
+  if (c2Range === 0) return 'none';
+  const c2Upper = c2.high - Math.max(c2.open, c2.close);
+  const c2Lower = Math.min(c2.open, c2.close) - c2.low;
+  const bodyRatio = c2Body / c2Range;
+  if (bodyRatio < 0.1) return 'doji';
+  if (c2Lower > 2 * c2Body && c2Upper < c2Body * 0.5) return 'hammer';
+  if (c2Upper > 2 * c2Body && c2Lower < c2Body * 0.5) return 'shooting_star';
+  if (c1.close < c1.open && c2.close > c2.open && c2Body > body(c1) && c2.close > c1.open && c2.open < c1.close) return 'bullish_engulf';
+  if (c1.close > c1.open && c2.close < c2.open && c2Body > body(c1) && c2.close < c1.open && c2.open > c1.close) return 'bearish_engulf';
+  return 'none';
+}
+
+// ================== ORDER BOOK ==================
+async function fetchOrderBook(limit = 100) {
+  try {
+    const r = await fetch(`https://api.binance.com/api/v3/depth?symbol=${SYMBOL}&limit=${limit}`, { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return {
+      bids: d.bids.map(b => ({ price: parseFloat(b[0]), qty: parseFloat(b[1]) })),
+      asks: d.asks.map(a => ({ price: parseFloat(a[0]), qty: parseFloat(a[1]) }))
+    };
+  } catch { return null; }
+}
+
+function analyzeOrderBook(ob) {
+  if (!ob) return null;
+  const totalBidQty = ob.bids.reduce((s, b) => s + b.qty, 0);
+  const totalAskQty = ob.asks.reduce((s, a) => s + a.qty, 0);
+  const total = totalBidQty + totalAskQty;
+  const imbalance = total > 0 ? (totalBidQty - totalAskQty) / total : 0;
+  const topBids = [...ob.bids].sort((a, b) => b.qty - a.qty).slice(0, 3);
+  const topAsks = [...ob.asks].sort((a, b) => b.qty - a.qty).slice(0, 3);
+  return {
+    imbalance: parseFloat(imbalance.toFixed(3)),
+    bidWall: topBids[0] ? parseFloat(topBids[0].price.toFixed(2)) : null,
+    askWall: topAsks[0] ? parseFloat(topAsks[0].price.toFixed(2)) : null
+  };
+}
+
+// ================== CVD ==================
+function calculateCVD(klines) {
+  if (!klines || klines.length < 10) return null;
+  let cvd = 0;
+  const series = [];
+  for (const k of klines) {
+    const range = k.high - k.low;
+    let buyVol = 0, sellVol = 0;
+    if (range > 0) {
+      const closePos = (k.close - k.low) / range;
+      buyVol = k.volume * closePos;
+      sellVol = k.volume * (1 - closePos);
+    }
+    cvd += buyVol - sellVol;
+    series.push(cvd);
+  }
+  const recent = series.slice(-10);
+  const delta = recent[recent.length - 1] - recent[0];
+  let trend = 'neutral';
+  if (delta > 0 && Math.abs(delta) > Math.abs(cvd) * 0.05) trend = 'buying';
+  else if (delta < 0 && Math.abs(delta) > Math.abs(cvd) * 0.05) trend = 'selling';
+  return { cvd: parseFloat(cvd.toFixed(2)), trend };
+}
+
+// ================== MULTI-TF ALIGNMENT ==================
+function calculateAlignmentScore(tfs) {
+  const weights = { '1m': 10, '5m': 15, '15m': 25, '1h': 30, '4h': 20 };
+  let bullScore = 0, bearScore = 0, totalWeight = 0;
+  const details = {};
+  for (const [tf, data] of Object.entries(tfs)) {
+    const w = weights[tf] || 10;
+    totalWeight += w;
+    let dir = 'neutral';
+    if (data.trend === 'UP') { bullScore += w; dir = 'bull'; }
+    else if (data.trend === 'DOWN') { bearScore += w; dir = 'bear'; }
+    details[tf] = { trend: data.trend, direction: dir, weight: w, rsi: data.rsi != null ? parseFloat(data.rsi.toFixed(1)) : null };
+  }
+  const bullPct = totalWeight > 0 ? (bullScore / totalWeight) * 100 : 0;
+  const bearPct = totalWeight > 0 ? (bearScore / totalWeight) * 100 : 0;
+  return {
+    bullAlignment: parseFloat(bullPct.toFixed(0)),
+    bearAlignment: parseFloat(bearPct.toFixed(0)),
+    maxAlignment: parseFloat(Math.max(bullPct, bearPct).toFixed(0)),
+    dominantDirection: bullPct > bearPct ? 'BULL' : bearPct > bullPct ? 'BEAR' : 'NEUTRAL',
+    details
+  };
+}
+
+// ================== SESSION ==================
+function detectSession() {
+  const hour = new Date().getUTCHours();
+  if (hour >= 13 && hour < 16) return 'LONDON_NY_OVERLAP';
+  if (hour >= 7 && hour < 13) return 'LONDON';
+  if (hour >= 16 && hour < 22) return 'NY';
+  if (hour >= 0 && hour < 7) return 'ASIA';
+  return 'OFF_HOURS';
+}
+
+function getSessionParams(session) {
+  switch (session) {
+    case 'LONDON_NY_OVERLAP': return { riskMult: 1.2, minConfidence: 0.6, allowTrade: true };
+    case 'LONDON':
+    case 'NY': return { riskMult: 1.0, minConfidence: 0.65, allowTrade: true };
+    case 'ASIA': return { riskMult: 0.7, minConfidence: 0.75, allowTrade: true };
+    default: return { riskMult: 0.5, minConfidence: 0.85, allowTrade: false };
+  }
+}
+
+// ================== LIQUIDATION ZONES ==================
+function detectLiquidationZones(klines) {
+  if (!klines || klines.length < 20) return { zones: [], nearestLong: null, nearestShort: null };
+  const zones = [];
+  const recent = klines.slice(-30);
+  for (let i = 0; i < recent.length - 1; i++) {
+    const k = recent[i];
+    const range = k.high - k.low;
+    if (range === 0) continue;
+    const upperWick = k.high - Math.max(k.open, k.close);
+    const lowerWick = Math.min(k.open, k.close) - k.low;
+    const body = Math.abs(k.close - k.open);
+    if (upperWick > body * 2 && upperWick / range > 0.6) zones.push({ price: k.high, type: 'SHORT_LIQ', strength: parseFloat((upperWick / range).toFixed(2)) });
+    if (lowerWick > body * 2 && lowerWick / range > 0.6) zones.push({ price: k.low, type: 'LONG_LIQ', strength: parseFloat((lowerWick / range).toFixed(2)) });
+  }
+  const currentPrice = klines[klines.length - 1].close;
+  const longLiqs = zones.filter(z => z.type === 'LONG_LIQ' && z.price < currentPrice).sort((a, b) => b.price - a.price);
+  const shortLiqs = zones.filter(z => z.type === 'SHORT_LIQ' && z.price > currentPrice).sort((a, b) => a.price - b.price);
+  return { zones: zones.slice(-10), nearestLong: longLiqs[0]?.price ?? null, nearestShort: shortLiqs[0]?.price ?? null };
+}
+
+// ================== LEVEL 5: ENSEMBLE STRATEGIES ==================
+function trendFollowerSignal(ctx) {
+  // Ikut trend mayor (1h & 15m)
+  let score = 0;
+  if (ctx.htf1hTrend === 'UP') score += 2;
+  if (ctx.htf1hTrend === 'DOWN') score -= 2;
+  if (ctx.htfTrend === 'UP') score += 1;
+  if (ctx.htfTrend === 'DOWN') score -= 1;
+  if (ctx.emaTrend === 'UPTREND') score += 1;
+  if (ctx.emaTrend === 'DOWNTREND') score -= 1;
+  if (ctx.regime === 'TRENDING_UP') score += 1;
+  if (ctx.regime === 'TRENDING_DOWN') score -= 1;
+  if (score >= 3) return { signal: 'BUY', strength: score / 6 };
+  if (score <= -3) return { signal: 'SELL', strength: Math.abs(score) / 6 };
+  return { signal: 'HOLD', strength: 0 };
+}
+
+function meanReverterSignal(ctx) {
+  // Beli saat oversold di lower BB, jual saat overbought di upper BB
+  let score = 0;
+  if (ctx.rsi < 35) score += 2;
+  else if (ctx.rsi < 45) score += 1;
+  if (ctx.rsi > 65) score -= 2;
+  else if (ctx.rsi > 55) score -= 1;
+  if (ctx.bbPosition != null) {
+    if (ctx.bbPosition < 0.15) score += 2;
+    else if (ctx.bbPosition < 0.3) score += 1;
+    if (ctx.bbPosition > 0.85) score -= 2;
+    else if (ctx.bbPosition > 0.7) score -= 1;
+  }
+  if (ctx.regime !== 'RANGING') score *= 0.5; // mean reversion hanya valid di ranging
+  if (score >= 3) return { signal: 'BUY', strength: score / 4 };
+  if (score <= -3) return { signal: 'SELL', strength: Math.abs(score) / 4 };
+  return { signal: 'HOLD', strength: 0 };
+}
+
+function momentumSignal(ctx) {
+  // MACD + RSI momentum
+  let score = 0;
+  if (ctx.macdStatus?.includes('GOLDEN')) score += 2;
+  if (ctx.macdStatus?.includes('DEATH')) score -= 2;
+  if (ctx.rsi > 55 && ctx.rsi < 70) score += 1;
+  if (ctx.rsi < 45 && ctx.rsi > 30) score -= 1;
+  if (ctx.cvdTrend === 'buying') score += 1;
+  if (ctx.cvdTrend === 'selling') score -= 1;
+  if (score >= 3) return { signal: 'BUY', strength: score / 5 };
+  if (score <= -3) return { signal: 'SELL', strength: Math.abs(score) / 5 };
+  return { signal: 'HOLD', strength: 0 };
+}
+
+function breakoutSignal(ctx, currentPrice) {
+  // Breakout S/R dengan volume
+  let score = 0;
+  const nearResistance = ctx.resistance && Math.abs(currentPrice - ctx.resistance) / ctx.resistance < 0.005;
+  const nearSupport = ctx.support && Math.abs(currentPrice - ctx.support) / ctx.support < 0.005;
+  const volumeHigh = ctx.volumeRatio > 1.5;
+  if (nearResistance && volumeHigh) score += 2;
+  if (nearSupport && volumeHigh) score -= 2;
+  if (ctx.orderBookImbalance > 0.2) score += 1;
+  if (ctx.orderBookImbalance < -0.2) score -= 1;
+  if (score >= 2) return { signal: 'BUY', strength: score / 3 };
+  if (score <= -2) return { signal: 'SELL', strength: Math.abs(score) / 3 };
+  return { signal: 'HOLD', strength: 0 };
+}
+
+function orderFlowSignal(ctx) {
+  // CVD + order book + imbalance
+  let score = 0;
+  if (ctx.cvdTrend === 'buying') score += 2;
+  if (ctx.cvdTrend === 'selling') score -= 2;
+  if (ctx.orderBookImbalance > 0.15) score += 1.5;
+  if (ctx.orderBookImbalance < -0.15) score -= 1.5;
+  if (ctx.oiChangePct > 0.02 && ctx.htfTrend === 'UP') score += 0.5;
+  if (ctx.oiChangePct > 0.02 && ctx.htfTrend === 'DOWN') score -= 0.5;
+  if (score >= 3) return { signal: 'BUY', strength: score / 4 };
+  if (score <= -3) return { signal: 'SELL', strength: Math.abs(score) / 4 };
+  return { signal: 'HOLD', strength: 0 };
+}
+
+function runEnsemble(ctx, currentPrice) {
+  const signals = {
+    trend_follower: trendFollowerSignal(ctx),
+    mean_reverter: meanReverterSignal(ctx),
+    momentum: momentumSignal(ctx),
+    breakout: breakoutSignal(ctx, currentPrice),
+    order_flow: orderFlowSignal(ctx)
+  };
+
+  // Weighted voting
+  const weights = { trend_follower: 1.3, mean_reverter: 0.9, momentum: 1.1, breakout: 1.0, order_flow: 1.2 };
+  let buyScore = 0, sellScore = 0, totalWeight = 0;
+
+  for (const [name, sig] of Object.entries(signals)) {
+    const w = weights[name];
+    totalWeight += w;
+    if (sig.signal === 'BUY') buyScore += w * sig.strength;
+    if (sig.signal === 'SELL') sellScore += w * sig.strength;
+  }
+
+  const buyPct = totalWeight > 0 ? (buyScore / totalWeight) * 100 : 0;
+  const sellPct = totalWeight > 0 ? (sellScore / totalWeight) * 100 : 0;
+
+  let consensus = 'HOLD';
+  if (buyPct > 40 && buyPct > sellPct * 1.5) consensus = 'BUY';
+  else if (sellPct > 40 && sellPct > buyPct * 1.5) consensus = 'SELL';
+
+  return {
+    consensus,
+    buyPct: parseFloat(buyPct.toFixed(1)),
+    sellPct: parseFloat(sellPct.toFixed(1)),
+    signals,
+    strength: consensus === 'BUY' ? buyPct : consensus === 'SELL' ? sellPct : 0
+  };
+}
+
+// ================== LEVEL 5: FEATURE VECTOR SCORING ==================
+function computeFeatureScore(ctx, ensemble) {
+  // ML-style weighted scoring — bukan ML asli, tapi weighted linear model
+  const features = {
+    alignment: (ctx.alignmentScore || 0) / 100,
+    ensembleBuy: ensemble.buyPct / 100,
+    ensembleSell: ensemble.sellPct / 100,
+    rsiPosition: ctx.rsi != null ? 1 - Math.abs(ctx.rsi - 50) / 50 : 0.5,   // 1 = netral, 0 = extreme
+    bbPosition: ctx.bbPosition != null ? 1 - Math.abs(ctx.bbPosition - 0.5) * 2 : 0.5,
+    volume: Math.min(1, (ctx.volumeRatio || 1) / 2),
+    orderBook: ctx.orderBookImbalance != null ? (ctx.orderBookImbalance + 1) / 2 : 0.5,
+    cvd: ctx.cvdTrend === 'buying' ? 1 : ctx.cvdTrend === 'selling' ? 0 : 0.5,
+    sessionBonus: ctx.session === 'LONDON_NY_OVERLAP' ? 1 : ctx.session === 'LONDON' || ctx.session === 'NY' ? 0.7 : ctx.session === 'ASIA' ? 0.4 : 0,
+    regimeBonus: ctx.regime === 'TRENDING_UP' || ctx.regime === 'TRENDING_DOWN' ? 0.9 : 0.6
+  };
+
+  const weights = {
+    alignment: 2.5,
+    ensembleBuy: 2.0,
+    rsiPosition: 1.0,
+    bbPosition: 1.0,
+    volume: 0.8,
+    orderBook: 1.2,
+    cvd: 1.3,
+    sessionBonus: 0.7,
+    regimeBonus: 0.8
+  };
+
+  let rawScore = 0, maxScore = 0;
+  for (const [k, w] of Object.entries(weights)) {
+    rawScore += (features[k] || 0) * w;
+    maxScore += w;
+  }
+
+  // Compute for both directions
+  const buyFeatureScore = (features.alignment * 2.5 + features.ensembleBuy * 2.0 + features.rsiPosition * 1.0 +
+                           features.bbPosition * 1.0 + features.volume * 0.8 + features.orderBook * 1.2 +
+                           features.cvd * 1.3 + features.sessionBonus * 0.7 + features.regimeBonus * 0.8) / maxScore * 100;
+
+  // Sell score = mirror
+  const featuresSell = { ...features, ensembleBuy: features.ensembleSell };
+  const sellFeatureScore = (features.alignment * 2.5 + featuresSell.ensembleBuy * 2.0 + features.rsiPosition * 1.0 +
+                            features.bbPosition * 1.0 + features.volume * 0.8 + (1 - features.orderBook) * 1.2 +
+                            (1 - features.cvd) * 1.3 + features.sessionBonus * 0.7 + features.regimeBonus * 0.8) / maxScore * 100;
+
+  return {
+    buyScore: parseFloat(buyFeatureScore.toFixed(1)),
+    sellScore: parseFloat(sellFeatureScore.toFixed(1)),
+    features
+  };
+}
+
+// ================== LEVEL 5: EVENT CALENDAR ==================
+function checkEventRisk() {
+  const today = new Date().toISOString().split('T')[0];
+  if (HIGH_IMPACT_EVENTS.includes(today)) {
+    return { level: 'HIGH', name: 'High-impact event today', date: today };
+  }
+  // Cek 1 hari sebelum & sesudah
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  if (HIGH_IMPACT_EVENTS.includes(tomorrow)) return { level: 'MEDIUM', name: 'Event besok', date: tomorrow };
+  if (HIGH_IMPACT_EVENTS.includes(yesterday)) return { level: 'MEDIUM', name: 'Event kemarin', date: yesterday };
+  return { level: 'LOW', name: null, date: null };
+}
+
+// ================== LEVEL 5: CORRELATION ==================
+function calculateCorrelation(prices1, prices2) {
+  if (!prices1 || !prices2 || prices1.length < 10 || prices2.length < 10) return null;
+  const n = Math.min(prices1.length, prices2.length, 30);
+  const p1 = prices1.slice(-n);
+  const p2 = prices2.slice(-n);
+
+  const returns1 = [], returns2 = [];
+  for (let i = 1; i < n; i++) {
+    returns1.push((p1[i] - p1[i - 1]) / p1[i - 1]);
+    returns2.push((p2[i] - p2[i - 1]) / p2[i - 1]);
+  }
+
+  const mean1 = returns1.reduce((a, b) => a + b, 0) / returns1.length;
+  const mean2 = returns2.reduce((a, b) => a + b, 0) / returns2.length;
+
+  let cov = 0, var1 = 0, var2 = 0;
+  for (let i = 0; i < returns1.length; i++) {
+    cov += (returns1[i] - mean1) * (returns2[i] - mean2);
+    var1 += Math.pow(returns1[i] - mean1, 2);
+    var2 += Math.pow(returns2[i] - mean2, 2);
+  }
+
+  if (var1 === 0 || var2 === 0) return 0;
+  return cov / Math.sqrt(var1 * var2);
+}
+
+// ================== KELLY & ADAPTIVE ==================
+function calculateKellySize(balance) {
+  if (allPnls.length < KELLY_MIN_TRADES) {
+    return { size: RISK_PER_TRADE, reason: `Kurang data (${allPnls.length}/${KELLY_MIN_TRADES})` };
+  }
+  const wins = allPnls.filter(p => p > 0);
+  const losses = allPnls.filter(p => p <= 0);
+  if (wins.length === 0 || losses.length === 0) return { size: RISK_PER_TRADE, reason: 'Imbalance' };
+  const winRate = wins.length / allPnls.length;
+  const avgWin = wins.reduce((a, b) => a + b, 0) / wins.length;
+  const avgLoss = Math.abs(losses.reduce((a, b) => a + b, 0) / losses.length);
+  const payoffRatio = avgWin / avgLoss;
+  const kelly = winRate - (1 - winRate) / payoffRatio;
+  let size = kelly * dynamicParams.kellyFraction;
+  size = Math.max(KELLY_MIN_SIZE, Math.min(KELLY_MAX_SIZE, size));
+  return { size, reason: `Kelly ${(kelly * 100).toFixed(2)}% × ${dynamicParams.kellyFraction}` };
+}
+
+function adjustSizeByRecentPerformance(baseAmount) {
+  if (consecutiveLosses >= MAX_CONSECUTIVE_LOSSES_BEFORE_COOLDOWN) return { amount: baseAmount * 0.5, reason: `Cooldown (${consecutiveLosses}L)` };
+  if (consecutiveWins >= 3) return { amount: baseAmount * 1.2, reason: `Hot (${consecutiveWins}W)` };
+  return { amount: baseAmount, reason: 'Normal' };
+}
+
+function adjustSizeByConfidence(baseAmount, confidence) {
+  if (confidence == null) return { amount: baseAmount };
+  if (confidence >= CONFIDENCE_HIGH) return { amount: baseAmount * 2 };
+  if (confidence <= CONFIDENCE_LOW) return { amount: baseAmount * 0.5 };
+  return { amount: baseAmount };
+}
+
+function calculateDynamicRisk(balance, currentPrice, confidence, sessionMult = 1) {
+  const kelly = calculateKellySize(balance);
+  let baseAmount = balance * kelly.size;
+  const perf = adjustSizeByRecentPerformance(baseAmount);
+  const conf = adjustSizeByConfidence(perf.amount, confidence);
+  const finalAmount = Math.max(50, conf.amount * sessionMult);
+  let lot = parseFloat((finalAmount / currentPrice).toFixed(6));
   if (lot < 0.001) lot = 0.001;
-  return { tradeAmount, calculatedLot: lot };
+  return {
+    tradeAmount: finalAmount,
+    calculatedLot: lot,
+    kellyReason: kelly.reason,
+    perfReason: perf.reason,
+    sessionMult,
+    finalSizePct: (finalAmount / balance * 100).toFixed(2)
+  };
+}
+
+// ================== PERFORMANCE ==================
+function calculateMetrics() {
+  if (allPnls.length === 0) return { sharpe: null, profitFactor: null };
+  const wins = allPnls.filter(p => p > 0);
+  const losses = allPnls.filter(p => p <= 0);
+  const totalWin = wins.reduce((a, b) => a + b, 0);
+  const totalLoss = Math.abs(losses.reduce((a, b) => a + b, 0));
+  const profitFactor = totalLoss > 0 ? totalWin / totalLoss : (totalWin > 0 ? Infinity : 0);
+  const avgWin = wins.length > 0 ? totalWin / wins.length : 0;
+  const avgLoss = losses.length > 0 ? totalLoss / losses.length : 0;
+  const mean = allPnls.reduce((a, b) => a + b, 0) / allPnls.length;
+  const variance = allPnls.reduce((s, p) => s + Math.pow(p - mean, 2), 0) / allPnls.length;
+  const stddev = Math.sqrt(variance);
+  const sharpe = stddev > 0 ? (mean / stddev) * Math.sqrt(252) : 0;
+  return {
+    sharpe: parseFloat(sharpe.toFixed(2)),
+    profitFactor: parseFloat(profitFactor.toFixed(2)),
+    avgWin: parseFloat(avgWin.toFixed(2)),
+    avgLoss: parseFloat(avgLoss.toFixed(2)),
+    maxDrawdown: parseFloat((maxDrawdown * 100).toFixed(2))
+  };
+}
+
+function calculateWinRate(limit = 20) {
+  const closed = tradeHistory.filter(t => Number.isFinite(t.pnl) && t.pnl !== 0).slice(0, limit);
+  if (closed.length === 0) return null;
+  const wins = closed.filter(t => t.pnl > 0).length;
+  return { wins, losses: closed.length - wins, total: closed.length, rate: wins / closed.length };
+}
+
+function updatePerformance(pnl) {
+  allPnls.push(pnl);
+  if (allPnls.length > 100) allPnls.shift();
+  if (pnl > 0) { consecutiveWins++; consecutiveLosses = 0; }
+  else { consecutiveLosses++; consecutiveWins = 0; }
+  if (virtualBalance > peakBalance) peakBalance = virtualBalance;
+  const dd = (peakBalance - virtualBalance) / peakBalance;
+  if (dd > maxDrawdown) maxDrawdown = dd;
+}
+
+// ================== LEVEL 5: CONFIDENCE CALIBRATION ==================
+function recordConfidenceOutcome(confidence, isWin) {
+  let band;
+  if (confidence >= 0.75) band = 'high';
+  else if (confidence >= 0.6) band = 'mid';
+  else band = 'low';
+  if (isWin) confidenceCalibration[band].wins++;
+  else confidenceCalibration[band].losses++;
+}
+
+function getCalibratedConfidence(rawConfidence) {
+  let band;
+  if (rawConfidence >= 0.75) band = 'high';
+  else if (rawConfidence >= 0.6) band = 'mid';
+  else band = 'low';
+  const c = confidenceCalibration[band];
+  const total = c.wins + c.losses;
+  if (total < 10) return rawConfidence;  // belum cukup data
+  const actualRate = c.wins / total;
+  // Kalibrasi: gabung raw + historical (average)
+  return (rawConfidence + actualRate) / 2;
+}
+
+// ================== LEVEL 5: AUTO-PARAMETER TUNING ==================
+function tuneParameters() {
+  if (allPnls.length < 20) return;
+  const recent = allPnls.slice(-20);
+  const wins = recent.filter(p => p > 0).length;
+  const winrate = wins / recent.length;
+
+  let changed = false;
+
+  // Kalau winrate rendah, perketat filter
+  if (winrate < 0.4) {
+    if (dynamicParams.minAlignment < 85) { dynamicParams.minAlignment += 5; changed = true; }
+    if (dynamicParams.minConfidence < 0.8) { dynamicParams.minConfidence += 0.05; changed = true; }
+    if (dynamicParams.kellyFraction > 0.1) { dynamicParams.kellyFraction -= 0.05; changed = true; }
+  }
+  // Kalau winrate tinggi, longgarkan sedikit
+  else if (winrate > 0.65) {
+    if (dynamicParams.minAlignment > 65) { dynamicParams.minAlignment -= 3; changed = true; }
+    if (dynamicParams.minConfidence > 0.55) { dynamicParams.minConfidence -= 0.03; changed = true; }
+    if (dynamicParams.kellyFraction < 0.35) { dynamicParams.kellyFraction += 0.02; changed = true; }
+  }
+
+  // Sesuaikan ATR SL/TP berdasarkan volatilitas realized
+  if (recent.length >= 10) {
+    const avgWin = recent.filter(p => p > 0).reduce((a, b) => a + b, 0) / Math.max(1, wins);
+    const avgLoss = Math.abs(recent.filter(p => p <= 0).reduce((a, b) => a + b, 0) / Math.max(1, recent.length - wins));
+    if (avgWin > 0 && avgLoss > 0) {
+      const ratio = avgWin / avgLoss;
+      // Kalau payoff ratio rendah (<1), perbesar TP multiplier
+      if (ratio < 1.2 && dynamicParams.atrTpMult < 4.0) { dynamicParams.atrTpMult += 0.1; changed = true; }
+      if (ratio > 2.5 && dynamicParams.atrTpMult > 2.0) { dynamicParams.atrTpMult -= 0.1; changed = true; }
+    }
+  }
+
+  if (changed) {
+    console.log(`[AutoTune] Param updated: align≥${dynamicParams.minAlignment}, conf≥${dynamicParams.minConfidence.toFixed(2)}, kelly=${dynamicParams.kellyFraction.toFixed(2)}, tpMult=${dynamicParams.atrTpMult.toFixed(1)}`);
+  }
+}
+
+// ================== LEVEL 5: BACKTEST ==================
+function backtestStrategy(klines, params = {}) {
+  if (!klines || klines.length < 100) return null;
+
+  const slMult = params.slMult ?? dynamicParams.atrSlMult;
+  const tpMult = params.tpMult ?? dynamicParams.atrTpMult;
+  const fee = TAKER_FEE * 2;
+
+  const highs = klines.map(k => k.high);
+  const lows = klines.map(k => k.low);
+  const closes = klines.map(k => k.close);
+
+  let trades = [];
+  let position = null;
+  let balance = 10000;
+  let startBalance = 10000;
+
+  for (let i = 50; i < klines.length; i++) {
+    const price = closes[i];
+
+    // Manage existing position
+    if (position) {
+      const priceDiff = position.type === 'BUY' ? (price - position.entry) : (position.entry - price);
+      const pct = priceDiff / position.entry;
+
+      if (price <= position.sl || price >= position.tp || i === klines.length - 1) {
+        const grossPnl = position.size * pct;
+        const netPnl = grossPnl - position.size * fee;
+        balance += netPnl;
+        trades.push({ pnl: netPnl, reason: price <= position.sl ? 'SL' : 'TP' });
+        position = null;
+      }
+      continue;
+    }
+
+    // Compute indicators
+    const slice = klines.slice(0, i + 1);
+    const sliceCloses = slice.map(k => k.close);
+    const rsi = calculateRSI(sliceCloses, 14);
+    const ema20 = calculateEMA(sliceCloses, 20);
+    const atr = calculateATR(slice.map(k => k.high), slice.map(k => k.low), sliceCloses, 14);
+
+    if (!rsi || !atr) continue;
+
+    // Simple strategy: RSI < 35 + price > EMA20 → BUY; RSI > 65 + price < EMA20 → SELL
+    let signal = null;
+    if (rsi < 35 && price > ema20) signal = 'BUY';
+    else if (rsi > 65 && price < ema20) signal = 'SELL';
+
+    if (signal) {
+      const size = balance * 0.02;
+      const sl = signal === 'BUY' ? price - atr * slMult : price + atr * slMult;
+      const tp = signal === 'BUY' ? price + atr * tpMult : price - atr * tpMult;
+      position = { type: signal, entry: price, sl, tp, size };
+    }
+  }
+
+  if (trades.length < 5) return null;
+
+  const wins = trades.filter(t => t.pnl > 0).length;
+  const totalPnl = balance - startBalance;
+  const totalWin = trades.filter(t => t.pnl > 0).reduce((a, b) => a + b.pnl, 0);
+  const totalLoss = Math.abs(trades.filter(t => t.pnl <= 0).reduce((a, b) => a + b.pnl, 0));
+
+  return {
+    trades: trades.length,
+    wins,
+    losses: trades.length - wins,
+    winrate: parseFloat((wins / trades.length * 100).toFixed(1)),
+    totalPnl: parseFloat(totalPnl.toFixed(2)),
+    profitFactor: totalLoss > 0 ? parseFloat((totalWin / totalLoss).toFixed(2)) : null,
+    params: { slMult, tpMult }
+  };
+}
+
+// ================== TELEGRAM ==================
+async function sendTelegram(message) {
+  if (!TELEGRAM_ENABLED) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: message, parse_mode: 'HTML' }),
+      signal: AbortSignal.timeout(8000)
+    });
+  } catch (e) { console.warn('[Telegram]', e.message); }
+}
+
+// ================== MARKET DATA ==================
+async function fetchKlines(symbol = SYMBOL, interval = '1m', limit = 60) {
+  try {
+    const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data.map(k => ({ open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]), volume: parseFloat(k[5]) }));
+  } catch { return null; }
+}
+
+async function fetchFundingRate() {
+  try {
+    const r = await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${SYMBOL}`, { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return parseFloat(d.lastFundingRate);
+  } catch { return null; }
+}
+
+async function fetchOpenInterest() {
+  try {
+    const r = await fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${SYMBOL}`, { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return parseFloat(d.openInterest);
+  } catch { return null; }
+}
+
+async function fetchFearGreed() {
+  try {
+    const r = await fetch(`https://api.alternative.me/fng/?limit=1`, { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (d.data && d.data[0]) return { value: parseInt(d.data[0].value), label: d.data[0].value_classification };
+    return null;
+  } catch { return null; }
+}
+
+let prevOI = null;
+let ethPriceHistory = [];
+
+async function updateMarketContext() {
+  try {
+    const [k1m, k5m, k15m, k1h, k4h, eth15m, funding, oi, fng, ob] = await Promise.all([
+      fetchKlines(SYMBOL, '1m', 100),
+      fetchKlines(SYMBOL, '5m', 60),
+      fetchKlines(SYMBOL, '15m', 30),
+      fetchKlines(SYMBOL, '1h', 24),
+      fetchKlines(SYMBOL, '4h', 20),
+      fetchKlines(ETH_SYMBOL, '15m', 30),
+      fetchFundingRate(),
+      fetchOpenInterest(),
+      fetchFearGreed(),
+      fetchOrderBook(100)
+    ]);
+
+    if (k1m && k1m.length >= 15) {
+      const highs = k1m.map(k => k.high);
+      const lows = k1m.map(k => k.low);
+      const closes = k1m.map(k => k.close);
+
+      const atr = calculateATR(highs, lows, closes, ATR_PERIOD);
+      if (atr) {
+        marketContext.atr = atr;
+        marketContext.atrPct = atr / closes[closes.length - 1];
+      }
+
+      if (k1m.length >= 20) {
+        const recentVols = k1m.slice(-20).map(k => k.volume);
+        const avgVol = recentVols.reduce((a, b) => a + b, 0) / recentVols.length;
+        marketContext.volumeRatio = k1m[k1m.length - 1].volume / avgVol;
+      }
+
+      const sr = findSupportResistance(highs, lows, 50);
+      marketContext.support = sr.support;
+      marketContext.resistance = sr.resistance;
+      marketContext.regime = detectMarketRegime(closes, atr);
+
+      const rsiSeries = calculateRSISeries(closes, RSI_PERIOD);
+      marketContext.rsiDivergence = detectRSIDivergence(closes, rsiSeries, 20);
+      marketContext.candlePattern = detectCandlePattern(k1m);
+
+      const cvd = calculateCVD(k1m.slice(-60));
+      if (cvd) { marketContext.cvd1m = cvd.cvd; marketContext.cvdTrend = cvd.trend; }
+
+      const liq = detectLiquidationZones(k1m);
+      marketContext.liquidationZones = liq.zones;
+      marketContext.nearestLongLiq = liq.nearestLong;
+      marketContext.nearestShortLiq = liq.nearestShort;
+    }
+
+    // Multi-TF alignment
+    const tfData = {};
+    const addTf = (arr, key, period) => {
+      if (!arr) return;
+      const closes = arr.map(k => k.close);
+      const ema = calculateEMA(closes, period);
+      tfData[key] = { trend: closes[closes.length - 1] > ema ? 'UP' : 'DOWN', rsi: calculateRSI(closes, 14) };
+    };
+    addTf(k1m, '1m', 20);
+    addTf(k5m, '5m', 20);
+    addTf(k15m, '15m', 20);
+    addTf(k1h, '1h', 10);
+    addTf(k4h, '4h', 10);
+
+    if (Object.keys(tfData).length >= 3) {
+      const alignment = calculateAlignmentScore(tfData);
+      marketContext.alignmentScore = alignment.maxAlignment;
+      marketContext.alignmentDetails = alignment.details;
+      marketContext.dominantDirection = alignment.dominantDirection;
+    }
+
+    // HTF
+    if (k15m && k15m.length >= 10) {
+      const closes15 = k15m.map(k => k.close);
+      const ema10 = calculateEMA(closes15, 10);
+      const lastClose = closes15[closes15.length - 1];
+      marketContext.htfChangePct = (lastClose - closes15[0]) / closes15[0];
+      if (lastClose > ema10 && marketContext.htfChangePct > 0.002) marketContext.htfTrend = 'UP';
+      else if (lastClose < ema10 && marketContext.htfChangePct < -0.002) marketContext.htfTrend = 'DOWN';
+      else marketContext.htfTrend = 'FLAT';
+    }
+    if (k1h && k1h.length >= 10) {
+      const closes1h = k1h.map(k => k.close);
+      const ema10 = calculateEMA(closes1h, 10);
+      const lastClose = closes1h[closes1h.length - 1];
+      if (lastClose > ema10 * 1.002) marketContext.htf1hTrend = 'UP';
+      else if (lastClose < ema10 * 0.998) marketContext.htf1hTrend = 'DOWN';
+      else marketContext.htf1hTrend = 'FLAT';
+    }
+
+    // Session
+    marketContext.session = detectSession();
+
+    // Order book
+    if (ob) {
+      const oba = analyzeOrderBook(ob);
+      if (oba) {
+        marketContext.orderBookImbalance = oba.imbalance;
+        marketContext.orderBookBidWall = oba.bidWall;
+        marketContext.orderBookAskWall = oba.askWall;
+      }
+    }
+
+    // Institutional
+    if (funding !== null) marketContext.fundingRate = funding;
+    if (oi !== null) {
+      marketContext.openInterest = oi;
+      if (prevOI !== null && prevOI > 0) marketContext.oiChangePct = (oi - prevOI) / prevOI;
+      prevOI = oi;
+    }
+    if (fng) {
+      marketContext.fearGreed = fng.value;
+      marketContext.fearGreedLabel = fng.label;
+    }
+
+    // LEVEL 5: ETH correlation
+    if (eth15m && eth15m.length >= 10) {
+      const ethCloses = eth15m.map(k => k.close);
+      const ema10 = calculateEMA(ethCloses, 10);
+      const lastClose = ethCloses[ethCloses.length - 1];
+      marketContext.ethTrend = lastClose > ema10 ? 'UP' : 'DOWN';
+
+      // BTC vs ETH correlation
+      if (k15m) {
+        const btcCloses = k15m.map(k => k.close);
+        marketContext.correlation = calculateCorrelation(btcCloses, ethCloses);
+      }
+    }
+
+    // LEVEL 5: Event risk
+    const eventRisk = checkEventRisk();
+    marketContext.eventRiskLevel = eventRisk.level;
+    marketContext.nextEventName = eventRisk.name;
+  } catch (e) {
+    console.warn('[MarketContext]', e.message);
+  }
+}
+
+function calculateATRSLTP(entryPrice, side) {
+  if (!marketContext.atr) {
+    return {
+      sl: side === 'BUY' ? entryPrice * (1 + FALLBACK_SL_PCT) : entryPrice * (1 - FALLBACK_SL_PCT),
+      tp: side === 'BUY' ? entryPrice * (1 + FALLBACK_TP_PCT) : entryPrice * (1 - FALLBACK_TP_PCT)
+    };
+  }
+  const slDist = marketContext.atr * dynamicParams.atrSlMult;
+  const tpDist = marketContext.atr * dynamicParams.atrTpMult;
+  return {
+    sl: side === 'BUY' ? entryPrice - slDist : entryPrice + slDist,
+    tp: side === 'BUY' ? entryPrice + tpDist : entryPrice - tpDist
+  };
 }
 
 function computeUnrealizedPnl(currentPrice) {
@@ -162,24 +1090,18 @@ function computeUnrealizedPnl(currentPrice) {
 }
 
 function computeNetPnl(trade, exitPrice) {
-  const grossDiff = trade.type === 'BUY'
-    ? (exitPrice - trade.entryPrice)
-    : (trade.entryPrice - exitPrice);
+  const grossDiff = trade.type === 'BUY' ? (exitPrice - trade.entryPrice) : (trade.entryPrice - exitPrice);
   const grossPnl = trade.notional * (grossDiff / trade.entryPrice);
   const entryFee = trade.notional * TAKER_FEE;
   const exitFee = (trade.notional + grossPnl) * TAKER_FEE;
-  return { grossPnl, netPnl: grossPnl - entryFee - exitFee };
+  return { grossPnl, netPnl: grossPnl - entryFee - exitFee, totalFee: entryFee + exitFee };
 }
 
 function updateMarketMemory({ price, rsi, ema, macdStatus, decision, reasoning, pnl }) {
   marketMemory.push({
     time: new Date().toLocaleTimeString('id-ID'),
-    price: price.toFixed(2),
-    rsi: rsi === null ? 'N/A' : rsi.toFixed(2),
-    ema: ema.toFixed(2),
-    macd: macdStatus,
-    decision,
-    reasoning,
+    price: price.toFixed(2), rsi: rsi === null ? 'N/A' : rsi.toFixed(2),
+    ema: ema.toFixed(2), macd: macdStatus, decision, reasoning,
     pnl: pnl != null ? `$${pnl.toFixed(2)}` : '$0.00'
   });
   if (marketMemory.length > MAX_MARKET_MEMORY) marketMemory.shift();
@@ -191,9 +1113,15 @@ function setCloseEvent(pnl, source) {
     type: isProfit ? 'PROFIT' : 'LOSS',
     pnl: parseFloat(pnl.toFixed(2)),
     message: isProfit ? 'Horee!!! Berhasil profit' : 'Yaah!! Gagal nih aku coba lagi ya',
-    source: source || 'GEMINI',
-    timestamp: Date.now()
+    source: source || 'GEMINI', timestamp: Date.now()
   };
+}
+
+function checkDailyReset() {
+  const today = new Date().toDateString();
+  if (today !== dailyStartDate) {
+    dailyStartDate = today; dailyStartBalance = virtualBalance; dailyPnl = 0; dailyTrades = 0;
+  }
 }
 
 // ================== AUTH ==================
@@ -204,18 +1132,14 @@ function requireAuth(req, res, next) {
   next();
 }
 
-// ================== PRICE FETCH ==================
+// ================== PRICE ==================
 async function fetchPrice() {
   try {
-    const r = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=${CC_FSYM}&tsyms=${CC_TSYMS}`, { signal: AbortSignal.timeout(8000) });
-    if (r.ok) { const d = await r.json(); if (d && Number.isFinite(d.USDT)) return parseFloat(d.USDT); }
-  } catch {}
-  try {
-    const r = await fetch(`https://api.mexc.com/api/v3/ticker/price?symbol=${SYMBOL}`, { signal: AbortSignal.timeout(8000) });
+    const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${SYMBOL}`, { signal: AbortSignal.timeout(8000) });
     if (r.ok) { const d = await r.json(); const p = parseFloat(d?.price); if (Number.isFinite(p)) return p; }
   } catch {}
   try {
-    const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${SYMBOL}`, { signal: AbortSignal.timeout(8000) });
+    const r = await fetch(`https://api.mexc.com/api/v3/ticker/price?symbol=${SYMBOL}`, { signal: AbortSignal.timeout(8000) });
     if (r.ok) { const d = await r.json(); const p = parseFloat(d?.price); if (Number.isFinite(p)) return p; }
   } catch {}
   throw new Error('Semua sumber harga BTC gagal.');
@@ -231,7 +1155,7 @@ async function executeBrokerOpen(action, price, lot) {
     const data = await r.json().catch(() => ({}));
     if (!r.ok) return { ok: false, error: data?.message || `HTTP ${r.status}` };
     const positionId = data.positionId || data.orderId || data.order?.id || data.position?.id;
-    if (!positionId) return { ok: false, error: 'Broker tidak mengembalikan positionId' };
+    if (!positionId) return { ok: false, error: 'No positionId' };
     return { ok: true, positionId, raw: data };
   } catch (err) { return { ok: false, error: err.message }; }
 }
@@ -248,48 +1172,80 @@ async function executeBrokerClose(positionId) {
   } catch (err) { return { ok: false, error: err.message }; }
 }
 
-// ================== TP/SL (PER POSISI, USD-BASED) ==================
+// ================== TP/SL ==================
 async function checkStopLossTakeProfit(currentPrice) {
   if (activeTrades.length === 0) return { closed: false, pnl: 0, count: 0 };
-
   let closedPnl = 0;
   const remaining = [];
-  let anyClosed = false;
-  let closedCount = 0;
+  let anyClosed = false, closedCount = 0;
 
   for (const trade of activeTrades) {
-    const diff = trade.type === 'BUY'
-      ? (currentPrice - trade.entryPrice)
-      : (trade.entryPrice - currentPrice);
+    const diff = trade.type === 'BUY' ? (currentPrice - trade.entryPrice) : (trade.entryPrice - currentPrice);
     const pct = diff / trade.entryPrice;
-    const { netPnl } = computeNetPnl(trade, currentPrice);
+    const { netPnl, totalFee } = computeNetPnl(trade, currentPrice);
 
-    // 🔥 TP UTAMA: berbasis USD net
-    const hitTP = netPnl >= TARGET_PROFIT_USD;
-    // Safety net SL persen
-    const hitSL = pct <= STOP_LOSS_PCT;
-    // Hard cap kalau gerakan besar tak terduga
-    const hitBigTP = pct >= TAKE_PROFIT_PCT;
+    if (!trade.peakPct || pct > trade.peakPct) trade.peakPct = pct;
+    if (!trade.peakPrice) trade.peakPrice = currentPrice;
+    if (trade.type === 'BUY' && currentPrice > trade.peakPrice) trade.peakPrice = currentPrice;
+    if (trade.type === 'SELL' && currentPrice < trade.peakPrice) trade.peakPrice = currentPrice;
 
-    if (hitTP || hitSL || hitBigTP) {
-      const reason = hitSL ? 'SL' : hitTP ? 'TP' : 'TP-CAP';
+    let hitSL = false, hitTP = false;
+    if (trade.type === 'BUY') { hitSL = currentPrice <= trade.slPrice; hitTP = currentPrice >= trade.tpPrice; }
+    else { hitSL = currentPrice >= trade.slPrice; hitTP = currentPrice <= trade.tpPrice; }
+
+    const hitCap = pct >= HARD_TP_CAP_PCT;
+
+    let hitChandelier = false;
+    if (trade.peakPct >= CHANDELIER_ACTIVATION_PCT && marketContext.atr) {
+      const dist = marketContext.atr * CHANDELIER_ATR_MULT;
+      if (trade.type === 'BUY') hitChandelier = currentPrice <= trade.peakPrice - dist;
+      else hitChandelier = currentPrice >= trade.peakPrice + dist;
+    }
+
+    if (hitTP || hitSL || hitCap || hitChandelier) {
+      const reason = hitSL ? 'SL' : hitTP ? 'TP' : hitCap ? 'TP-CAP' : 'CHANDELIER';
       const result = await executeBrokerClose(trade.positionId);
-      if (!result.ok) {
-        console.error(`[${reason}] Gagal close ${trade.positionId}: ${result.error}`);
-        remaining.push(trade);
-        continue;
+      if (!result.ok) { remaining.push(trade); continue; }
+
+      closedPnl += netPnl; cumulativeFee += totalFee; cumulativeTrades++; dailyTrades++; dailyPnl += netPnl;
+      updatePerformance(netPnl);
+
+      // LEARNING: confidence calibration
+      if (trade.confidence != null) recordConfidenceOutcome(trade.confidence, netPnl > 0);
+
+      // LEARNING: pattern outcome
+      if (trade.signature) {
+        recordPatternOutcome(trade.signature, netPnl > 0);
+        if (trade.session && patternStats.bySession[trade.session]) {
+          if (netPnl > 0) patternStats.bySession[trade.session].wins++;
+          else patternStats.bySession[trade.session].losses++;
+        }
+        if (trade.regime) {
+          if (!patternStats.byRegime[trade.regime]) patternStats.byRegime[trade.regime] = { wins: 0, losses: 0 };
+          if (netPnl > 0) patternStats.byRegime[trade.regime].wins++;
+          else patternStats.byRegime[trade.regime].losses++;
+        }
       }
-      closedPnl += netPnl;
-      anyClosed = true;
-      closedCount++;
+
+      // LEARNING: ensemble outcome
+      if (trade.ensembleSignals) {
+        for (const [name, sig] of Object.entries(trade.ensembleSignals)) {
+          if (sig.signal === trade.type) {
+            if (netPnl > 0) ensembleStats[name].wins++;
+            else ensembleStats[name].losses++;
+          }
+        }
+      }
+
+      anyClosed = true; closedCount++;
       tradeHistory.unshift({
         time: new Date().toLocaleTimeString('id-ID'),
         type: `${reason} ${trade.type} (${pct >= 0 ? '+' : ''}${(pct * 100).toFixed(2)}% • $${netPnl.toFixed(2)})`,
-        open: trade.entryPrice.toFixed(2),
-        close: currentPrice.toFixed(2),
-        pnl: netPnl,
-        balanceAfter: virtualBalance + closedPnl
+        open: trade.entryPrice.toFixed(2), close: currentPrice.toFixed(2),
+        pnl: netPnl, balanceAfter: virtualBalance + closedPnl
       });
+
+      sendTelegram(`${netPnl >= 0 ? '✅' : '❌'} <b>${reason} ${trade.type}</b>\nPnL: $${netPnl.toFixed(2)}\nBalance: $${(virtualBalance + closedPnl).toFixed(2)}`);
     } else {
       remaining.push(trade);
     }
@@ -299,66 +1255,143 @@ async function checkStopLossTakeProfit(currentPrice) {
   if (anyClosed) {
     virtualBalance += closedPnl;
     setCloseEvent(closedPnl, 'TP/SL');
+    // Auto-tune after close
+    tuneParameters();
   }
   return { closed: anyClosed, pnl: closedPnl, count: closedCount };
 }
 
-// ================== GEMINI CALL ==================
-async function callGeminiWithRetry(systemPrompt) {
-  let lastError = null;
-  for (const modelName of GEMINI_MODELS) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: systemPrompt,
-          config: { responseMimeType: 'application/json' }
-        });
-        if (response.text) {
-          const cleaned = response.text.replace(/```json|```/g, '').trim();
-          const parsed = JSON.parse(cleaned);
-          if (parsed && typeof parsed.action === 'string') {
-            return { ok: true, decision: parsed, model: modelName, attempts: attempt };
-          }
-        }
-        lastError = new Error('Respons tidak valid');
-      } catch (e) {
-        lastError = e;
-        const msg = e.message || '';
-        const isRetryable = msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('high demand') || msg.includes('overloaded');
-        console.warn(`[Gemini][${modelName}][attempt ${attempt}] ${msg.slice(0, 120)}`);
-        if (!isRetryable) break;
-        if (attempt < 2) await new Promise(r => setTimeout(r, 1500 * attempt));
+// ================== GEMINI ==================
+async function callSingleModel(modelName, systemPrompt, attempts = 2) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: modelName, contents: systemPrompt,
+        config: { responseMimeType: 'application/json' }
+      });
+      if (response.text) {
+        const cleaned = response.text.replace(/```json|```/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+        if (parsed && typeof parsed.action === 'string') return { ok: true, decision: parsed };
       }
+    } catch (e) {
+      const msg = e.message || '';
+      const isRetryable = msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('high demand') || msg.includes('overloaded') || msg.includes('500');
+      console.warn(`[Gemini][${modelName}][a${attempt}] ${msg.slice(0, 100)}`);
+      if (!isRetryable || attempt >= attempts) break;
+      await new Promise(r => setTimeout(r, 2000 * attempt));
     }
   }
-  return { ok: false, error: lastError };
+  return { ok: false };
+}
+
+async function callGeminiWithConsensus(systemPrompt) {
+  const primaryResults = await Promise.all(GEMINI_MODELS_PRIMARY.map(m => callSingleModel(m, systemPrompt, 2)));
+  const validResults = primaryResults.filter(r => r.ok);
+
+  if (validResults.length >= 2) {
+    const actions = validResults.map(r => r.decision.action);
+    const allSame = actions.every(a => a === actions[0]);
+    if (allSame) {
+      const avgConf = validResults.reduce((s, r) => s + (r.decision.confidence || 0), 0) / validResults.length;
+      geminiSuccessCount++;
+      return {
+        ok: true,
+        decision: {
+          action: actions[0],
+          confidence: Math.min(0.95, avgConf * 1.2),
+          reasoning: `[KONSENSUS ${validResults.length}x] ${validResults[0].decision.reasoning}`
+        },
+        consensus: 'STRONG', models: validResults.length
+      };
+    } else {
+      return {
+        ok: true,
+        decision: { action: 'HOLD', confidence: 0.3, reasoning: `[SPLIT] ${actions.join(' vs ')}` },
+        consensus: 'SPLIT', models: validResults.length
+      };
+    }
+  }
+
+  if (validResults.length === 1) {
+    const fallback = await callSingleModel(GEMINI_MODELS_FALLBACK[0], systemPrompt, 2);
+    if (fallback.ok && fallback.decision.action === validResults[0].decision.action) {
+      geminiSuccessCount++;
+      return {
+        ok: true,
+        decision: {
+          action: validResults[0].decision.action,
+          confidence: Math.min(0.85, (validResults[0].decision.confidence || 0.5) * 1.1),
+          reasoning: `[KONSENSUS 2x] ${validResults[0].decision.reasoning}`
+        },
+        consensus: 'MODERATE', models: 2
+      };
+    }
+    geminiSuccessCount++;
+    return {
+      ok: true,
+      decision: {
+        action: validResults[0].decision.action,
+        confidence: (validResults[0].decision.confidence || 0.5) * 0.8,
+        reasoning: `[SINGLE] ${validResults[0].decision.reasoning}`
+      },
+      consensus: 'SINGLE', models: 1
+    };
+  }
+
+  geminiFailCount++;
+  return { ok: false };
+}
+
+// ================== SELF-LEARNING HELPERS ==================
+function generateSignature(ctx) {
+  return [ctx.regime, ctx.htfTrend, ctx.session, ctx.rsiDivergence, ctx.candlePattern].join('|');
+}
+
+function recordPatternOutcome(signature, isWin) {
+  if (!patternStats.bySignature[signature]) patternStats.bySignature[signature] = { wins: 0, losses: 0 };
+  if (isWin) patternStats.bySignature[signature].wins++;
+  else patternStats.bySignature[signature].losses++;
+}
+
+function getPatternWinrate(signature) {
+  const s = patternStats.bySignature[signature];
+  if (!s) return null;
+  const total = s.wins + s.losses;
+  if (total < 3) return null;
+  return { rate: s.wins / total, wins: s.wins, losses: s.losses, total };
+}
+
+function getBestPatterns(topN = 3) {
+  return Object.entries(patternStats.bySignature)
+    .filter(([, s]) => (s.wins + s.losses) >= 3)
+    .map(([sig, s]) => ({
+      sig, winrate: s.wins / (s.wins + s.losses), wins: s.wins, losses: s.losses, total: s.wins + s.losses
+    }))
+    .sort((a, b) => b.winrate - a.winrate)
+    .slice(0, topN);
 }
 
 // ================== FALLBACK ==================
 function fallbackDecision(currentPrice, rsiValue, macdText, rsiText) {
   const decision = { action: 'HOLD', reasoning: '', confidence: 0 };
   if (activeTrades.length > 0) {
-    // Auto close pakai avg entry
     const avgEntry = activeTrades.reduce((s, t) => s + t.entryPrice, 0) / activeTrades.length;
     const isBuy = activeTrades[0].type === 'BUY';
     const diff = isBuy ? (currentPrice - avgEntry) : (avgEntry - currentPrice);
     const pct = diff / avgEntry;
-
-    if (pct >= FALLBACK_PROFIT_CLOSE_PCT) {
-      decision.action = 'CLOSE';
-      decision.reasoning = `Fallback: auto-close +${(pct * 100).toFixed(2)}%`;
-    } else if (pct <= FALLBACK_LOSS_CLOSE_PCT) {
-      decision.action = 'CLOSE';
-      decision.reasoning = `Fallback: auto-close SL ${(pct * 100).toFixed(2)}%`;
-    } else {
-      decision.action = 'HOLD';
-      decision.reasoning = `Fallback HOLD. ${(pct * 100).toFixed(2)}%`;
-    }
+    if (pct >= FALLBACK_PROFIT_CLOSE_PCT) { decision.action = 'CLOSE'; decision.reasoning = `Fallback profit +${(pct * 100).toFixed(2)}%`; }
+    else if (pct <= FALLBACK_LOSS_CLOSE_PCT) { decision.action = 'CLOSE'; decision.reasoning = `Fallback SL ${(pct * 100).toFixed(2)}%`; }
+    else { decision.action = 'HOLD'; decision.reasoning = `Fallback HOLD ${(pct * 100).toFixed(2)}%`; }
   } else {
-    if (rsiValue !== null && rsiValue < 45) { decision.action = 'BUY'; decision.reasoning = `Fallback BUY. RSI=${rsiText}`; }
-    else if (rsiValue !== null && rsiValue > 55) { decision.action = 'SELL'; decision.reasoning = `Fallback SELL. RSI=${rsiText}`; }
-    else { decision.action = 'HOLD'; decision.reasoning = `Fallback HOLD. RSI=${rsiText}, ${macdText}`; }
+    const align = marketContext.alignmentScore;
+    if (align != null && align >= dynamicParams.minAlignment && marketContext.dominantDirection === 'BULL' && rsiValue < 55) {
+      decision.action = 'BUY'; decision.reasoning = `Fallback BUY alignment ${align}%`;
+    } else if (align != null && align >= dynamicParams.minAlignment && marketContext.dominantDirection === 'BEAR' && rsiValue > 45) {
+      decision.action = 'SELL'; decision.reasoning = `Fallback SELL alignment ${align}%`;
+    } else {
+      decision.action = 'HOLD'; decision.reasoning = `Fallback HOLD align=${align ?? 'N/A'}`;
+    }
   }
   return decision;
 }
@@ -370,13 +1403,14 @@ async function runAutonomousAgent() {
   cycleCount++;
 
   try {
+    checkDailyReset();
     let currentPrice;
     try {
       currentPrice = await fetchPrice();
       consecutiveFailures = 0;
     } catch (err) {
       consecutiveFailures++;
-      console.warn(`[Price] Gagal (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}): ${err.message}`);
+      console.warn(`[Price] Gagal (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES})`);
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
         isBotRunning = false;
         if (botInterval) { clearInterval(botInterval); botInterval = null; }
@@ -387,77 +1421,244 @@ async function runAutonomousAgent() {
     priceHistory.push(currentPrice);
     if (priceHistory.length > MAX_PRICE_HISTORY) priceHistory.shift();
 
-    // Cek TP/SL DULU sebelum analisis baru
+    await updateMarketContext();
     await checkStopLossTakeProfit(currentPrice);
 
     const rsiValue = calculateRSI(priceHistory, RSI_PERIOD);
     const ema20Value = calculateEMA(priceHistory, 20);
     const macdData = calculateMACDSeries(priceHistory);
-    const emaTrend = currentPrice >= ema20Value ? 'UPTREND (Bullish)' : 'DOWNTREND (Bearish)';
-    const rsiText = rsiValue === null ? 'Belum cukup data' : rsiValue.toFixed(2);
-    const macdText = macdData ? macdData.status : 'Belum cukup data';
+    const emaTrend = currentPrice >= ema20Value ? 'UPTREND' : 'DOWNTREND';
+    const bb = calculateBollingerBands(priceHistory, BB_PERIOD, BB_STDDEV);
+    const rsiText = rsiValue === null ? 'N/A' : rsiValue.toFixed(2);
+    const macdText = macdData ? macdData.status : 'N/A';
 
-    const { tradeAmount, calculatedLot } = calculateDynamicRisk(virtualBalance, currentPrice);
-    const totalCurrentPnl = computeUnrealizedPnl(currentPrice);
+    if (bb) {
+      marketContext.bbUpper = bb.upper; marketContext.bbLower = bb.lower;
+      marketContext.bbMiddle = bb.middle; marketContext.bbWidth = bb.width;
+      marketContext.bbPosition = (currentPrice - bb.lower) / (bb.upper - bb.lower);
+    }
 
+    const session = marketContext.session;
+    const sessionParams = getSessionParams(session);
+
+    // LEVEL 5: Ensemble voting
+    const ensembleCtx = {
+      rsi: rsiValue, macdStatus: macdText, emaTrend,
+      bbPosition: marketContext.bbPosition,
+      htfTrend: marketContext.htfTrend,
+      htf1hTrend: marketContext.htf1hTrend,
+      regime: marketContext.regime,
+      volumeRatio: marketContext.volumeRatio,
+      cvdTrend: marketContext.cvdTrend,
+      orderBookImbalance: marketContext.orderBookImbalance,
+      oiChangePct: marketContext.oiChangePct,
+      support: marketContext.support,
+      resistance: marketContext.resistance
+    };
+    const ensemble = runEnsemble(ensembleCtx, currentPrice);
+
+    // LEVEL 5: Feature scoring
+    const featureScore = computeFeatureScore({
+      alignmentScore: marketContext.alignmentScore,
+      rsi: rsiValue,
+      bbPosition: marketContext.bbPosition,
+      volumeRatio: marketContext.volumeRatio,
+      orderBookImbalance: marketContext.orderBookImbalance,
+      cvdTrend: marketContext.cvdTrend,
+      session,
+      regime: marketContext.regime
+    }, ensemble);
+    marketContext.featureScore = featureScore.buyScore;
+
+    // Signature
+    const signature = generateSignature({
+      regime: marketContext.regime, htfTrend: marketContext.htfTrend,
+      session, rsiDivergence: marketContext.rsiDivergence, candlePattern: marketContext.candlePattern
+    });
+    const sigWinrate = getPatternWinrate(signature);
+    const bestPatterns = getBestPatterns(3);
+
+    const winRate = calculateWinRate(20);
+    const winRateText = winRate ? `${(winRate.rate * 100).toFixed(0)}% (${winRate.wins}W/${winRate.losses}L)` : 'N/A';
+    const metrics = calculateMetrics();
+
+    const dailyLossPct = (virtualBalance - dailyStartBalance) / dailyStartBalance;
+    const dailyLimitHit = dailyLossPct <= -DAILY_LOSS_LIMIT_PCT;
+    const feeRatio = cumulativeFee / 10000;
+    const feeGuardActive = feeRatio >= MAX_CUMULATIVE_FEE_PCT;
+    const alignScore = marketContext.alignmentScore;
+
+    // Reflection
+    const recentClosed = tradeHistory.filter(t => Number.isFinite(t.pnl) && t.pnl !== 0).slice(0, 5);
+    const reflectionCtx = recentClosed.length > 0
+      ? `5 trade: ${recentClosed.map(t => `$${t.pnl.toFixed(2)}`).join(', ')}\nStreak: ${consecutiveWins}W/${consecutiveLosses}L\nPattern ini: ${sigWinrate ? `${(sigWinrate.rate * 100).toFixed(0)}%` : 'baru'}`
+      : '(Sesi awal)';
+
+    // ==================== PROMPT LEVEL 5 ====================
     const systemPrompt = `
-Kamu adalah "Orion", Autonomous AI Trading Agent SCALPING untuk Bitcoin (${DISPLAY}).
-Target: profit kecil cepat ($0.15 per posisi), 8 posisi sekaligus, frekuensi tinggi.
+Kamu adalah "Orion v5", AI Trading Agent BTC (${DISPLAY}) dengan ENSEMBLE + ML-SCORE + ADAPTIVE system.
 
-DATA PASAR:
-- Harga: $${currentPrice.toFixed(2)}
-- RSI (14): ${rsiText}
-- EMA (20): $${ema20Value.toFixed(2)} (${emaTrend})
-- MACD: ${macdText}
-- Saldo: $${virtualBalance.toFixed(2)}
-- Posisi aktif: ${activeTrades.length}/${MAX_ACTIVE_TRADES}
-- Unrealized PnL: $${totalCurrentPnl.toFixed(2)}
+═══════════ ENSEMBLE VOTING (5 strategi independen) ═══════════
+Konsensus: ${ensemble.consensus} (buy ${ensemble.buyPct}% vs sell ${ensemble.sellPct}%)
+${Object.entries(ensemble.signals).map(([name, sig]) => `  - ${name}: ${sig.signal} (strength ${(sig.strength * 100).toFixed(0)}%)`).join('\n')}
 
-SISTEM OTOMATIS:
-- Tiap posisi akan auto-close di +$${TARGET_PROFIT_USD} net profit
-- SL otomatis di ${(STOP_LOSS_PCT * 100).toFixed(2)}% per posisi
-- Kamu tidak perlu mikirin CLOSE — fokus pilih ENTRY
+═══════════ FEATURE SCORE (ML-weighted) ═══════════
+Buy Score: ${featureScore.buyScore}/100
+Sell Score: ${featureScore.sellScore}/100
 
-ATURAN:
-1. Jika ada posisi aktif → "HOLD" (biarkan sistem TP/SL bekerja).
-2. Jika TIDAK ada posisi → PRIORITASKAN ENTRY:
-   - "BUY" jika RSI < 55 ATAU MACD histogram positif ATAU harga > EMA20
-   - "SELL" jika RSI > 45 ATAU MACD histogram negatif ATAU harga < EMA20
-   - "HOLD" HANYA jika sinyal benar-benar bertentangan
+═══════════ DATA PASAR ═══════════
+Harga: $${currentPrice.toFixed(2)}
+RSI: ${rsiText} | EMA20: ${emaTrend} | MACD: ${macdText}
+BB Position: ${marketContext.bbPosition != null ? (marketContext.bbPosition * 100).toFixed(0) + '%' : 'N/A'}
+
+MULTI-TF ALIGNMENT: ${alignScore ?? 'N/A'}/100 (${marketContext.dominantDirection})
+${marketContext.alignmentDetails ? Object.entries(marketContext.alignmentDetails).map(([tf, d]) => `  ${tf}: ${d.trend} (rsi:${d.rsi})`).join('\n') : ''}
+
+ORDER FLOW:
+- Imbalance: ${marketContext.orderBookImbalance != null ? (marketContext.orderBookImbalance * 100).toFixed(1) + '%' : 'N/A'}
+- CVD: ${marketContext.cvdTrend}
+- Bid wall: $${marketContext.orderBookBidWall ?? 'N/A'}
+- Ask wall: $${marketContext.orderBookAskWall ?? 'N/A'}
+
+VOLATILITAS:
+- ATR: $${marketContext.atr ? marketContext.atr.toFixed(2) : 'N/A'}
+- Regime: ${marketContext.regime}
+- Volume ratio: ${marketContext.volumeRatio ? marketContext.volumeRatio.toFixed(2) + '×' : 'N/A'}
+
+DIVERGENCE & PATTERNS:
+- RSI Divergence: ${marketContext.rsiDivergence}
+- Candle: ${marketContext.candlePattern}
+
+SESSION: ${session} (risk ×${sessionParams.riskMult})
+S/R: Support $${marketContext.support?.toFixed(2) ?? 'N/A'} | Resistance $${marketContext.resistance?.toFixed(2) ?? 'N/A'}
+Liq Zones: Long $${marketContext.nearestLongLiq ?? 'N/A'} | Short $${marketContext.nearestShortLiq ?? 'N/A'}
+
+INSTITUSIONAL:
+- Funding: ${marketContext.fundingRate != null ? (marketContext.fundingRate * 100).toFixed(4) + '%' : 'N/A'}
+- OI change: ${marketContext.oiChangePct != null ? (marketContext.oiChangePct * 100).toFixed(2) + '%' : 'N/A'}
+- Fear&Greed: ${marketContext.fearGreed ?? 'N/A'} (${marketContext.fearGreedLabel})
+
+HTF: 15m ${marketContext.htfTrend} | 1h ${marketContext.htf1hTrend}
+
+KORELASI & EVENT:
+- ETH trend: ${marketContext.ethTrend} | Korelasi BTC-ETH: ${marketContext.correlation != null ? marketContext.correlation.toFixed(2) : 'N/A'}
+- Event risk: ${marketContext.eventRiskLevel} ${marketContext.nextEventName ? `(${marketContext.nextEventName})` : ''}
+
+═══════════ AKUN ═══════════
+Saldo: $${virtualBalance.toFixed(2)} | Posisi: ${activeTrades.length}/${MAX_ACTIVE_TRADES}
+Daily PnL: $${dailyPnl.toFixed(2)} | Fee: $${cumulativeFee.toFixed(2)}
+Winrate: ${winRateText} | Sharpe: ${metrics.sharpe ?? 'N/A'} | PF: ${metrics.profitFactor ?? 'N/A'}
+
+═══════════ AUTO-TUNED PARAMS (bot menyesuaikan diri) ═══════════
+Min alignment: ${dynamicParams.minAlignment}
+Min confidence: ${dynamicParams.minConfidence}
+Kelly fraction: ${dynamicParams.kellyFraction}
+ATR TP mult: ${dynamicParams.atrTpMult}
+
+═══════════ SELF-LEARNING ═══════════
+${reflectionCtx}
+
+═══════════ KEPUTUSAN (SANGAT KETAT) ═══════════
+1. Ada posisi → "HOLD"
+
+2. Entry hanya jika SEMUA kondisi berikut:
+
+   ✅ BUY:
+      - Ensemble consensus = BUY dengan buy score > sell
+      - Feature buy score ≥ 65
+      - Alignment ≥ ${dynamicParams.minAlignment} dominan BULL
+      - HTF 15m UP/FLAT, 1h ≠ DOWN
+      - RSI 30-55, BB position < 0.7
+      - Volume > 0.7×, CVD buying/neutral
+      - Funding < 0.10%, F&G < 75
+      - Event risk ≠ HIGH
+      - Korelasi BTC-ETH tidak ekstrem negatif (kalau ada)
+
+   ✅ SELL:
+      - Ensemble consensus = SELL
+      - Feature sell score ≥ 65
+      - Alignment ≥ ${dynamicParams.minAlignment} dominan BEAR
+      - HTF 15m DOWN/FLAT, 1h ≠ UP
+      - RSI 45-70, BB position > 0.3
+      - Volume > 0.7×, CVD selling/neutral
+      - Funding > -0.05%, F&G > 25
+      - Event risk ≠ HIGH
+
+3. RAJA: kalau ensemble ≠ ${ensemble.consensus} atau align < ${dynamicParams.minAlignment} → HOLD.
+
+4. Confidence 0.0-1.0. Kalau tidak yakin, HOLD.
 
 Balas JSON MURNI:
 {
   "action": "BUY" | "SELL" | "HOLD" | "CLOSE",
   "confidence": 0.85,
-  "reasoning": "maks 2 kalimat"
+  "reasoning": "Alasan (maks 3 kalimat, sebut indikator kunci)"
 }
 `;
 
-    let agentDecision = { action: 'HOLD', reasoning: 'Menunggu sinyal...', confidence: 0 };
-    const geminiResult = await callGeminiWithRetry(systemPrompt);
+    let agentDecision = { action: 'HOLD', reasoning: 'Menunggu...', confidence: 0 };
+    let consensus = 'N/A';
+
+    const geminiResult = await callGeminiWithConsensus(systemPrompt);
 
     if (geminiResult.ok) {
       agentDecision = geminiResult.decision;
-      lastGeminiStatus = 'ok';
+      consensus = geminiResult.consensus || 'N/A';
+      lastGeminiStatus = `ok/${consensus}`;
     } else {
-      console.warn('[Gemini] Fallback mode aktif.');
       agentDecision = fallbackDecision(currentPrice, rsiValue, macdText, rsiText);
       lastGeminiStatus = 'fallback';
+      consensus = 'FALLBACK';
+    }
+
+    // Kalibrasi confidence
+    if (agentDecision.confidence != null && agentDecision.action !== 'HOLD' && agentDecision.action !== 'CLOSE') {
+      agentDecision.calibratedConfidence = getCalibratedConfidence(agentDecision.confidence);
+    }
+
+    // ============ GUARDS LEVEL 5 ============
+    if (dailyLimitHit) {
+      agentDecision.action = 'HOLD';
+      agentDecision.reasoning = `⚠️ Daily loss limit ${(dailyLossPct * 100).toFixed(2)}%`;
+    }
+    if (!sessionParams.allowTrade && agentDecision.action !== 'HOLD' && agentDecision.action !== 'CLOSE') {
+      agentDecision.action = 'HOLD';
+      agentDecision.reasoning = `⚠️ Session ${session} off-hours`;
+    }
+    if ((agentDecision.action === 'BUY' || agentDecision.action === 'SELL') && alignScore != null && alignScore < dynamicParams.minAlignment) {
+      agentDecision.action = 'HOLD';
+      agentDecision.reasoning = `⚠️ Align ${alignScore} < ${dynamicParams.minAlignment}`;
+    }
+    if ((agentDecision.action === 'BUY' || agentDecision.action === 'SELL') && (agentDecision.confidence ?? 0) < dynamicParams.minConfidence) {
+      agentDecision.action = 'HOLD';
+      agentDecision.reasoning = `⚠️ Conf ${((agentDecision.confidence || 0) * 100).toFixed(0)}% < ${dynamicParams.minConfidence * 100}%`;
+    }
+    if ((agentDecision.action === 'BUY' || agentDecision.action === 'SELL') && marketContext.eventRiskLevel === 'HIGH') {
+      agentDecision.action = 'HOLD';
+      agentDecision.reasoning = `⚠️ Event risk HIGH: ${marketContext.nextEventName}`;
     }
 
     // Eksekusi
     if (agentDecision.action === 'CLOSE' && activeTrades.length > 0) {
-      // Gemini minta close manual
-      let closedCount = 0;
-      let closeTotalPnl = 0;
+      let closedCount = 0, closeTotalPnl = 0;
       const closedTrades = [];
       for (const trade of [...activeTrades]) {
         const result = await executeBrokerClose(trade.positionId);
         if (!result.ok) continue;
-        const { netPnl } = computeNetPnl(trade, currentPrice);
-        closeTotalPnl += netPnl;
-        closedTrades.push(trade);
-        closedCount++;
+        const { netPnl, totalFee } = computeNetPnl(trade, currentPrice);
+        closeTotalPnl += netPnl; cumulativeFee += totalFee; cumulativeTrades++; dailyTrades++; dailyPnl += netPnl;
+        updatePerformance(netPnl);
+        if (trade.confidence != null) recordConfidenceOutcome(trade.confidence, netPnl > 0);
+        if (trade.signature) recordPatternOutcome(trade.signature, netPnl > 0);
+        if (trade.ensembleSignals) {
+          for (const [name, sig] of Object.entries(trade.ensembleSignals)) {
+            if (sig.signal === trade.type) {
+              if (netPnl > 0) ensembleStats[name].wins++;
+              else ensembleStats[name].losses++;
+            }
+          }
+        }
+        closedTrades.push(trade); closedCount++;
       }
       if (closedCount > 0) {
         virtualBalance += closeTotalPnl;
@@ -465,60 +1666,84 @@ Balas JSON MURNI:
         tradeHistory.unshift({
           time: new Date().toLocaleTimeString('id-ID'),
           type: `GEMINI CLOSE ${closedCount}x (${closeTotalPnl >= 0 ? 'PROFIT' : 'LOSS'})`,
-          open: closedTrades[0].entryPrice.toFixed(2),
-          close: currentPrice.toFixed(2),
-          pnl: closeTotalPnl,
-          balanceAfter: virtualBalance
+          open: closedTrades[0].entryPrice.toFixed(2), close: currentPrice.toFixed(2),
+          pnl: closeTotalPnl, balanceAfter: virtualBalance
         });
         updateMarketMemory({
           price: currentPrice, rsi: rsiValue, ema: ema20Value, macdStatus: macdText,
           decision: 'CLOSE', reasoning: agentDecision.reasoning, pnl: closeTotalPnl
         });
         setCloseEvent(closeTotalPnl, 'GEMINI');
+        tuneParameters();
       }
     } else if ((agentDecision.action === 'BUY' || agentDecision.action === 'SELL') && activeTrades.length === 0) {
-      // 🔥 BUKA 8 POSISI SEKALIGUS
-      const totalExposure = tradeAmount * MAX_ACTIVE_TRADES;
-      if (virtualBalance >= totalExposure) {
-        const openedTrades = [];
-        for (let i = 0; i < MAX_ACTIVE_TRADES; i++) {
-          const entryPrice = applySlippage(currentPrice, agentDecision.action);
-          const result = await executeBrokerOpen(agentDecision.action, entryPrice, calculatedLot);
-          if (!result.ok) { console.error(`[Open] Gagal: ${result.error}`); continue; }
-          virtualBalance -= tradeAmount * TAKER_FEE;
-          openedTrades.push({
-            id: Date.now() + i,
-            positionId: result.positionId,
-            type: agentDecision.action,
-            notional: tradeAmount,
-            lot: calculatedLot,
-            entryPrice,
-            entryTs: Date.now()
-          });
-        }
-        activeTrades.push(...openedTrades);
-        if (openedTrades.length > 0) {
-          tradeHistory.unshift({
-            time: new Date().toLocaleTimeString('id-ID'),
-            type: `OPEN ${openedTrades.length}x ${agentDecision.action} (${DISPLAY})`,
-            open: openedTrades[0].entryPrice.toFixed(2),
-            close: '-', pnl: 0, balanceAfter: virtualBalance
-          });
-          updateMarketMemory({
-            price: currentPrice, rsi: rsiValue, ema: ema20Value, macdStatus: macdText,
-            decision: agentDecision.action, reasoning: agentDecision.reasoning, pnl: 0
-          });
-        }
-      } else {
+      if (feeGuardActive) {
         updateMarketMemory({
           price: currentPrice, rsi: rsiValue, ema: ema20Value, macdStatus: macdText,
-          decision: 'HOLD', reasoning: 'Saldo tidak cukup untuk 8 posisi.', pnl: totalCurrentPnl
+          decision: 'HOLD', reasoning: `⚠️ Fee guard $${cumulativeFee.toFixed(2)}`,
+          pnl: computeUnrealizedPnl(currentPrice)
         });
+      } else {
+        const confidence = agentDecision.calibratedConfidence || agentDecision.confidence || 0.6;
+        const sizingInfo = calculateDynamicRisk(virtualBalance, currentPrice, confidence, sessionParams.riskMult);
+        const { tradeAmount, calculatedLot } = sizingInfo;
+        const totalExposure = tradeAmount * MAX_ACTIVE_TRADES;
+
+        if (virtualBalance >= totalExposure) {
+          const openedTrades = [];
+          // SCALE-IN: buka bertahap
+          for (let step = 0; step < SCALE_IN_STEPS; step++) {
+            const perStep = Math.ceil(MAX_ACTIVE_TRADES / SCALE_IN_STEPS);
+            for (let i = 0; i < perStep; i++) {
+              if (openedTrades.length >= MAX_ACTIVE_TRADES) break;
+              const livePrice = step === 0 ? currentPrice : await fetchPrice().catch(() => currentPrice);
+              const entryPrice = applySlippage(livePrice, agentDecision.action);
+              const result = await executeBrokerOpen(agentDecision.action, entryPrice, calculatedLot);
+              if (!result.ok) continue;
+              const { sl, tp } = calculateATRSLTP(entryPrice, agentDecision.action);
+              const entryFee = tradeAmount * TAKER_FEE;
+              virtualBalance -= entryFee; cumulativeFee += entryFee;
+              openedTrades.push({
+                id: Date.now() + i + step * 100, positionId: result.positionId,
+                type: agentDecision.action, notional: tradeAmount, lot: calculatedLot,
+                entryPrice, slPrice: sl, tpPrice: tp,
+                entryTs: Date.now(), peakPct: 0, peakPrice: entryPrice,
+                confidence: agentDecision.confidence, calibratedConfidence: confidence,
+                consensus, signature, session, regime: marketContext.regime,
+                ensembleSignals: ensemble.signals
+              });
+            }
+            if (step < SCALE_IN_STEPS - 1) await new Promise(r => setTimeout(r, SCALE_IN_DELAY_MS));
+          }
+
+          activeTrades.push(...openedTrades);
+          if (openedTrades.length > 0) {
+            tradeHistory.unshift({
+              time: new Date().toLocaleTimeString('id-ID'),
+              type: `OPEN ${openedTrades.length}x ${agentDecision.action} (${session} | ens ${ensemble.consensus} | align ${alignScore ?? 'N/A'} | feat ${featureScore.buyScore})`,
+              open: openedTrades[0].entryPrice.toFixed(2), close: '-', pnl: 0, balanceAfter: virtualBalance
+            });
+            updateMarketMemory({
+              price: currentPrice, rsi: rsiValue, ema: ema20Value, macdStatus: macdText,
+              decision: agentDecision.action,
+              reasoning: `[${consensus}/${ensemble.consensus}/align ${alignScore}] ${agentDecision.reasoning}`,
+              pnl: 0
+            });
+            sendTelegram(`🚀 <b>OPEN ${openedTrades.length}x ${agentDecision.action}</b>\nEntry: $${openedTrades[0].entryPrice.toFixed(2)}\nSession: ${session} | Ensemble: ${ensemble.consensus}\nAlign: ${alignScore ?? 'N/A'} | Feature: ${featureScore.buyScore}\nConfidence: ${(confidence * 100).toFixed(0)}%`);
+          }
+        } else {
+          updateMarketMemory({
+            price: currentPrice, rsi: rsiValue, ema: ema20Value, macdStatus: macdText,
+            decision: 'HOLD', reasoning: 'Saldo tidak cukup.',
+            pnl: computeUnrealizedPnl(currentPrice)
+          });
+        }
       }
     } else {
       updateMarketMemory({
         price: currentPrice, rsi: rsiValue, ema: ema20Value, macdStatus: macdText,
-        decision: 'HOLD', reasoning: agentDecision.reasoning, pnl: totalCurrentPnl
+        decision: 'HOLD', reasoning: agentDecision.reasoning,
+        pnl: computeUnrealizedPnl(currentPrice)
       });
     }
 
@@ -527,29 +1752,73 @@ Balas JSON MURNI:
     serverLogs = {
       symbol: DISPLAY,
       price: currentPrice.toFixed(2),
-      analysis: `[Orion] ${agentDecision.reasoning}`,
+      analysis: `[Orion v5|${consensus}] ${agentDecision.reasoning}`,
       decision: agentDecision.action,
       confidence: agentDecision.confidence ?? null,
-      geminiStatus: lastGeminiStatus,
+      calibratedConfidence: agentDecision.calibratedConfidence ?? null,
+      consensus, geminiStatus: lastGeminiStatus,
       balance: virtualBalance,
-      dynamicLot: calculatedLot,
-      tradeAllocation: tradeAmount,
       activeTradesCount: activeTrades.length,
       activeTrades,
-      totalCurrentPnl,
-      targetProfitUsd: TARGET_PROFIT_USD,
+      totalCurrentPnl: computeUnrealizedPnl(currentPrice),
       maxActiveTrades: MAX_ACTIVE_TRADES,
+      cumulativeFee: parseFloat(cumulativeFee.toFixed(2)),
+      cumulativeTrades, dailyPnl: parseFloat(dailyPnl.toFixed(2)), dailyTrades,
+      winRate, metrics,
+      streak: { wins: consecutiveWins, losses: consecutiveLosses },
+      geminiStats: { success: geminiSuccessCount, fail: geminiFailCount },
       lastCloseEvent,
+      currentSignature: signature, signatureWinrate: sigWinrate, bestPatterns,
+      dynamicParams,
+      ensemble: {
+        consensus: ensemble.consensus,
+        buyPct: ensemble.buyPct, sellPct: ensemble.sellPct,
+        signals: ensemble.signals,
+        stats: ensembleStats
+      },
+      featureScore: {
+        buy: featureScore.buyScore,
+        sell: featureScore.sellScore,
+        features: featureScore.features
+      },
+      confidenceCalibration,
+      patternStats: {
+        sessionPerformance: patternStats.bySession,
+        regimePerformance: patternStats.byRegime,
+        totalPatterns: Object.keys(patternStats.bySignature).length
+      },
+      lastBacktest,
+      marketContext: {
+        atr: marketContext.atr ? parseFloat(marketContext.atr.toFixed(2)) : null,
+        atrPct: marketContext.atrPct ? parseFloat((marketContext.atrPct * 100).toFixed(3)) : null,
+        htfTrend: marketContext.htfTrend, htf1hTrend: marketContext.htf1hTrend,
+        volumeRatio: marketContext.volumeRatio ? parseFloat(marketContext.volumeRatio.toFixed(2)) : null,
+        regime: marketContext.regime,
+        support: marketContext.support ? parseFloat(marketContext.support.toFixed(2)) : null,
+        resistance: marketContext.resistance ? parseFloat(marketContext.resistance.toFixed(2)) : null,
+        bbPosition: marketContext.bbPosition != null ? parseFloat((marketContext.bbPosition * 100).toFixed(0)) : null,
+        fundingRate: marketContext.fundingRate, openInterest: marketContext.openInterest,
+        fearGreed: marketContext.fearGreed, fearGreedLabel: marketContext.fearGreedLabel,
+        rsiDivergence: marketContext.rsiDivergence, candlePattern: marketContext.candlePattern,
+        orderBookImbalance: marketContext.orderBookImbalance,
+        orderBookBidWall: marketContext.orderBookBidWall, orderBookAskWall: marketContext.orderBookAskWall,
+        cvd1m: marketContext.cvd1m, cvdTrend: marketContext.cvdTrend,
+        alignmentScore: marketContext.alignmentScore,
+        dominantDirection: marketContext.dominantDirection,
+        alignmentDetails: marketContext.alignmentDetails,
+        session, sessionParams,
+        nearestLongLiq: marketContext.nearestLongLiq, nearestShortLiq: marketContext.nearestShortLiq,
+        ethTrend: marketContext.ethTrend, correlation: marketContext.correlation,
+        eventRiskLevel: marketContext.eventRiskLevel, nextEventName: marketContext.nextEventName,
+        featureScore: marketContext.featureScore
+      },
       indicators: {
         rsi: rsiValue === null ? null : parseFloat(rsiValue.toFixed(2)),
         ema20: ema20Value.toFixed(2),
         macd: macdData ? { macd: macdData.macd.toFixed(2), signal: macdData.signal.toFixed(2), histogram: macdData.histogram.toFixed(2) } : null,
-        macdStatus: macdText,
-        trend: emaTrend
+        macdStatus: macdText, trend: emaTrend
       },
-      tradeHistory,
-      marketMemory,
-      cycleCount,
+      tradeHistory, marketMemory, cycleCount,
       timestamp: new Date().toLocaleTimeString('id-ID')
     };
   } catch (error) {
@@ -571,17 +1840,17 @@ app.get('/api/start-bot', requireAuth, async (req, res) => {
     if (botInterval) clearInterval(botInterval);
     botInterval = setInterval(runAutonomousAgent, LOOP_INTERVAL_MS);
   }
-  res.json({ success: true, message: 'Orion BTC aktif (8 posisi, TP $0.15).' });
+  res.json({ success: true, message: 'Orion v5 aktif.' });
 });
 
 app.get('/api/stop-bot', requireAuth, (req, res) => {
   isBotRunning = false;
   if (botInterval) { clearInterval(botInterval); botInterval = null; }
-  res.json({ success: true, message: 'Orion BTC dihentikan.' });
+  res.json({ success: true, message: 'Orion v5 dihentikan.' });
 });
 
 app.get('/api/force-close', requireAuth, async (req, res) => {
-  if (activeTrades.length === 0) return res.json({ success: false, message: 'Tidak ada posisi aktif.' });
+  if (activeTrades.length === 0) return res.json({ success: false, message: 'Tidak ada posisi.' });
   try {
     const currentPrice = await fetchPrice();
     let totalPnl = 0, closedCount = 0;
@@ -589,25 +1858,79 @@ app.get('/api/force-close', requireAuth, async (req, res) => {
     for (const trade of [...activeTrades]) {
       const result = await executeBrokerClose(trade.positionId);
       if (!result.ok) continue;
-      const { netPnl } = computeNetPnl(trade, currentPrice);
-      totalPnl += netPnl;
-      closedTrades.push(trade);
-      closedCount++;
+      const { netPnl, totalFee } = computeNetPnl(trade, currentPrice);
+      totalPnl += netPnl; cumulativeFee += totalFee; cumulativeTrades++; dailyTrades++; dailyPnl += netPnl;
+      updatePerformance(netPnl);
+      if (trade.confidence != null) recordConfidenceOutcome(trade.confidence, netPnl > 0);
+      if (trade.signature) recordPatternOutcome(trade.signature, netPnl > 0);
+      closedTrades.push(trade); closedCount++;
     }
     if (closedCount > 0) {
       virtualBalance += totalPnl;
       activeTrades = activeTrades.filter(t => !closedTrades.includes(t));
       tradeHistory.unshift({
         time: new Date().toLocaleTimeString('id-ID'),
-        type: `MANUAL CLOSE ${closedCount}x (${totalPnl >= 0 ? 'PROFIT' : 'LOSS'})`,
-        open: closedTrades[0].entryPrice.toFixed(2),
-        close: currentPrice.toFixed(2),
+        type: `MANUAL CLOSE ${closedCount}x`,
+        open: closedTrades[0].entryPrice.toFixed(2), close: currentPrice.toFixed(2),
         pnl: totalPnl, balanceAfter: virtualBalance
       });
       setCloseEvent(totalPnl, 'MANUAL');
     }
-    res.json({ success: true, message: `${closedCount} posisi ditutup. PnL: $${totalPnl.toFixed(2)}`, closedCount, totalPnl });
+    res.json({ success: true, message: `${closedCount} posisi ditutup. PnL: $${totalPnl.toFixed(2)}` });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// BACKTEST endpoint
+app.get('/api/backtest', requireAuth, async (req, res) => {
+  try {
+    const interval = req.query.interval || '15m';
+    const limit = parseInt(req.query.limit) || 500;
+    const klines = await fetchKlines(SYMBOL, interval, limit);
+    if (!klines) return res.json({ success: false, message: 'Gagal fetch klines' });
+
+    const slMult = parseFloat(req.query.sl) || dynamicParams.atrSlMult;
+    const tpMult = parseFloat(req.query.tp) || dynamicParams.atrTpMult;
+
+    const result = backtestStrategy(klines, { slMult, tpMult });
+    lastBacktest = result ? { ...result, interval, limit, timestamp: new Date().toLocaleTimeString('id-ID') } : null;
+
+    res.json({ success: true, result: lastBacktest });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// Reset dynamic params
+app.get('/api/reset-params', requireAuth, (req, res) => {
+  dynamicParams = { atrSlMult: 1.5, atrTpMult: 2.5, minAlignment: 70, minConfidence: 0.65, kellyFraction: 0.25 };
+  res.json({ success: true, message: 'Params direset', params: dynamicParams });
+});
+
+// Add event
+app.get('/api/add-event', requireAuth, (req, res) => {
+  const { date, name } = req.query;
+  if (!date) return res.json({ success: false, message: 'Butuh date=YYYY-MM-DD' });
+  if (!HIGH_IMPACT_EVENTS.includes(date)) HIGH_IMPACT_EVENTS.push(date);
+  res.json({ success: true, events: HIGH_IMPACT_EVENTS });
+});
+
+app.get('/api/reset', requireAuth, (req, res) => {
+  isBotRunning = false;
+  if (botInterval) { clearInterval(botInterval); botInterval = null; }
+  virtualBalance = 10000; activeTrades = []; tradeHistory = []; priceHistory = [];
+  marketMemory = []; cycleCount = 0; cumulativeFee = 0; cumulativeTrades = 0;
+  geminiSuccessCount = 0; geminiFailCount = 0; consecutiveFailures = 0;
+  lastCloseEvent = null; serverLogs = {};
+  dailyStartBalance = 10000; dailyStartDate = new Date().toDateString();
+  dailyPnl = 0; dailyTrades = 0;
+  consecutiveLosses = 0; consecutiveWins = 0;
+  peakBalance = 10000; maxDrawdown = 0; allPnls = [];
+  patternStats = { bySignature: {}, bySession: { ASIA: { wins: 0, losses: 0 }, LONDON: { wins: 0, losses: 0 }, NY: { wins: 0, losses: 0 } }, byRegime: {} };
+  confidenceCalibration = { low: { wins: 0, losses: 0 }, mid: { wins: 0, losses: 0 }, high: { wins: 0, losses: 0 } };
+  ensembleStats = {
+    trend_follower: { wins: 0, losses: 0 }, mean_reverter: { wins: 0, losses: 0 },
+    momentum: { wins: 0, losses: 0 }, breakout: { wins: 0, losses: 0 }, order_flow: { wins: 0, losses: 0 }
+  };
+  dynamicParams = { atrSlMult: 1.5, atrTpMult: 2.5, minAlignment: 70, minConfidence: 0.65, kellyFraction: 0.25 };
+  res.json({ success: true, message: 'State direset.' });
 });
 
 app.get('/api/bot-status', (req, res) => {
@@ -615,13 +1938,11 @@ app.get('/api/bot-status', (req, res) => {
     running: isBotRunning,
     data: serverLogs,
     state: {
-      virtualBalance,
-      activeTradesCount: activeTrades.length,
-      isExecutingCycle,
-      consecutiveFailures,
-      geminiStatus: lastGeminiStatus,
-      targetProfitUsd: TARGET_PROFIT_USD,
-      maxActiveTrades: MAX_ACTIVE_TRADES
+      virtualBalance, activeTradesCount: activeTrades.length,
+      isExecutingCycle, consecutiveFailures, geminiStatus: lastGeminiStatus,
+      dynamicParams, geminiStats: { success: geminiSuccessCount, fail: geminiFailCount },
+      ensembleStats, confidenceCalibration,
+      lastBacktest
     }
   });
 });
@@ -633,11 +1954,15 @@ process.on('SIGINT', () => {
 });
 
 app.listen(port, () => {
-  console.log(`Orion BTC Agent berjalan di port ${port}`);
-  console.log(`Live broker: ${ENABLE_LIVE_BROKER ? 'AKTIF ⚠️' : 'simulasi'}`);
-  console.log(`Gemini models: ${GEMINI_MODELS.join(' → ')}`);
-  console.log(`Max posisi sekaligus: ${MAX_ACTIVE_TRADES}`);
-  console.log(`Target profit per posisi: $${TARGET_PROFIT_USD} net`);
-  console.log(`SL per posisi: ${(STOP_LOSS_PCT * 100).toFixed(2)}%`);
-  if (!CONTROL_API_KEY) console.warn('[WARN] CONTROL_API_KEY tidak diset — endpoint kontrol terbuka!');
+  console.log(`═══════════════════════════════════════════════════`);
+  console.log(`  Orion v5 — ADAPTIVE INTELLIGENCE`);
+  console.log(`═══════════════════════════════════════════════════`);
+  console.log(`Loop: ${LOOP_INTERVAL_MS / 1000}s | Live: ${ENABLE_LIVE_BROKER ? '⚠️ AKTIF' : 'simulasi'}`);
+  console.log(`Ensemble: 5 strategies voting`);
+  console.log(`Feature scoring: ML-weighted (10 features)`);
+  console.log(`Self-learning: patterns + confidence calibration + ensemble stats`);
+  console.log(`Auto-tune: params adjust based on 20-trade rolling winrate`);
+  console.log(`Backtest: /api/backtest?interval=15m&limit=500`);
+  console.log(`Telegram: ${TELEGRAM_ENABLED ? '✅' : '❌'}`);
+  console.log(`═══════════════════════════════════════════════════`);
 });
