@@ -23,7 +23,8 @@ const SYMBOL = 'BTCUSDT';
 const ETH_SYMBOL = 'ETHUSDT';
 const DISPLAY = 'BTC/USDT';
 
-const GEMINI_MODELS_PRIMARY = ['gemini-2.5-flash', 'gemini-3.8-flash'];
+// ⚠️ KURANGI jadi 1 model utama saja (hemat 50%)
+const GEMINI_MODELS_PRIMARY = ['gemini-3.8-flash'];
 const GEMINI_MODELS_FALLBACK = ['gemini-2.0-flash'];
 
 const ENABLE_LIVE_BROKER = process.env.ENABLE_LIVE_BROKER === 'true';
@@ -41,8 +42,10 @@ if (ENABLE_LIVE_BROKER && (!META_API_TOKEN || !META_ACCOUNT_ID)) {
   process.exit(1);
 }
 
-// ================== STRATEGI BASE ==================
-const LOOP_INTERVAL_MS = 180000;
+// ================== STRATEGI ==================
+// ⚠️ Loop 10 MENIT (bukan 3 menit) — 6x lebih hemat kuota
+const LOOP_INTERVAL_MS = 600000;
+
 const MAX_ACTIVE_TRADES = 4;
 const MAX_PRICE_HISTORY = 100;
 const MAX_MARKET_MEMORY = 10;
@@ -52,7 +55,6 @@ const RISK_PER_TRADE = 0.02;
 const TAKER_FEE = 0.0004;
 const SLIPPAGE = 0.0002;
 
-// ATR multipliers (auto-tunable)
 let dynamicParams = {
   atrSlMult: 1.5,
   atrTpMult: 2.5,
@@ -91,15 +93,40 @@ const EMA_SIGNAL = 9;
 const ATR_PERIOD = 14;
 const MAX_CONSECUTIVE_FAILURES = 5;
 
-// Scale-in: buka posisi bertahap
 const SCALE_IN_STEPS = 2;
 const SCALE_IN_DELAY_MS = 2000;
 
-// Event calendar — event high impact (dalam format YYYY-MM-DD UTC)
-const HIGH_IMPACT_EVENTS = [
-  // Update manual atau via env. Format: '2026-10-15', '2026-11-05', dll.
-  // Ini contoh — user bisa tambahkan sendiri
-];
+const HIGH_IMPACT_EVENTS = [];
+
+// ================== QUOTA MANAGEMENT ==================
+// ⚠️ SMART CACHING: skip Gemini kalau kondisi hampir sama
+let geminiCache = {
+  decision: null,
+  price: 0,
+  regime: '',
+  rsiBand: '',       // 'low' | 'mid' | 'high'
+  alignmentBand: '', // 'low' | 'mid' | 'high'
+  timestamp: 0
+};
+const CACHE_TTL_MS = 10 * 60 * 1000;         // Cache valid 10 menit
+const CACHE_PRICE_THRESHOLD = 0.003;         // Skip kalau harga gerak <0.3%
+
+// ⚠️ QUOTA COOLDOWN: kalau kena 429, istirahat
+let quotaCooldown = {
+  active: false,
+  until: 0,
+  hits: 0
+};
+const COOLDOWN_AFTER_429_MS = 30 * 60 * 1000; // Cooldown 30 menit setelah 429
+const COOLDOWN_AFTER_429_HITS_2_MS = 60 * 60 * 1000; // 1 jam kalau kena 2x
+const COOLDOWN_AFTER_429_HITS_3_MS = 3 * 60 * 60 * 1000; // 3 jam kalau kena 3x
+
+let dailyGeminiRequests = 0;
+let dailyGeminiRequestsDate = new Date().toDateString();
+const DAILY_REQUEST_LIMIT = 1200;            // Target maksimum per hari
+const MAX_REQUESTS_PER_HOUR = 60;            // Batas aman per jam
+
+let hourlyRequests = [];
 
 // ================== STATE ==================
 let isBotRunning = false;
@@ -119,6 +146,7 @@ let cumulativeFee = 0;
 let cumulativeTrades = 0;
 let geminiSuccessCount = 0;
 let geminiFailCount = 0;
+let geminiSkipCount = 0;      // berapa kali skip karena cache
 
 let consecutiveLosses = 0;
 let consecutiveWins = 0;
@@ -126,13 +154,11 @@ let peakBalance = 10000;
 let maxDrawdown = 0;
 let allPnls = [];
 
-// Daily
 let dailyStartBalance = 10000;
 let dailyStartDate = new Date().toDateString();
 let dailyPnl = 0;
 let dailyTrades = 0;
 
-// Ensemble strategies
 let ensembleStats = {
   trend_follower: { wins: 0, losses: 0 },
   mean_reverter: { wins: 0, losses: 0 },
@@ -141,24 +167,20 @@ let ensembleStats = {
   order_flow: { wins: 0, losses: 0 }
 };
 
-// Confidence calibration
 let confidenceCalibration = {
-  low: { wins: 0, losses: 0 },      // 0.4-0.6
-  mid: { wins: 0, losses: 0 },      // 0.6-0.75
-  high: { wins: 0, losses: 0 }      // 0.75+
+  low: { wins: 0, losses: 0 },
+  mid: { wins: 0, losses: 0 },
+  high: { wins: 0, losses: 0 }
 };
 
-// Self-learning patterns
 let patternStats = {
   bySignature: {},
   bySession: { ASIA: { wins: 0, losses: 0 }, LONDON: { wins: 0, losses: 0 }, NY: { wins: 0, losses: 0 } },
   byRegime: {}
 };
 
-// Backtest results
 let lastBacktest = null;
 
-// Market context
 let marketContext = {
   atr: null, atrPct: null,
   htfTrend: 'unknown', htfChangePct: 0,
@@ -167,32 +189,17 @@ let marketContext = {
   bbUpper: null, bbLower: null, bbMiddle: null, bbWidth: null, bbPosition: null,
   support: null, resistance: null,
   regime: 'unknown',
-  fundingRate: null,
-  openInterest: null,
-  oiChangePct: null,
+  fundingRate: null, openInterest: null, oiChangePct: null,
   fearGreed: null, fearGreedLabel: 'N/A',
-  rsiDivergence: 'none',
-  candlePattern: 'none',
-  orderBookImbalance: null,
-  orderBookBidWall: null,
-  orderBookAskWall: null,
-  cvd1m: null,
-  cvdTrend: 'unknown',
-  alignmentScore: null,
-  alignmentDetails: {},
-  dominantDirection: 'NEUTRAL',
+  rsiDivergence: 'none', candlePattern: 'none',
+  orderBookImbalance: null, orderBookBidWall: null, orderBookAskWall: null,
+  cvd1m: null, cvdTrend: 'unknown',
+  alignmentScore: null, alignmentDetails: {}, dominantDirection: 'NEUTRAL',
   session: 'unknown',
-  liquidationZones: [],
-  nearestLongLiq: null,
-  nearestShortLiq: null,
-  // LEVEL 5:
-  ethTrend: 'unknown',           // ETH 15m trend
-  ethBtcRatio: null,              // ETH/BTC ratio
-  correlation: null,              // correlation BTC vs ETH (rolling)
-  btcDominanceTrend: 'unknown',   // via CoinGecko
-  eventRiskLevel: 'LOW',          // LOW | MEDIUM | HIGH
-  nextEventName: null,
-  featureScore: 0                 // ML-style weighted score
+  nearestLongLiq: null, nearestShortLiq: null,
+  ethTrend: 'unknown', correlation: null,
+  eventRiskLevel: 'LOW', nextEventName: null,
+  featureScore: 0
 };
 
 // ================== HELPERS ==================
@@ -322,7 +329,6 @@ function detectCandlePattern(klines) {
   return 'none';
 }
 
-// ================== ORDER BOOK ==================
 async function fetchOrderBook(limit = 100) {
   try {
     const r = await fetch(`https://api.binance.com/api/v3/depth?symbol=${SYMBOL}&limit=${limit}`, { signal: AbortSignal.timeout(6000) });
@@ -350,7 +356,6 @@ function analyzeOrderBook(ob) {
   };
 }
 
-// ================== CVD ==================
 function calculateCVD(klines) {
   if (!klines || klines.length < 10) return null;
   let cvd = 0;
@@ -374,7 +379,6 @@ function calculateCVD(klines) {
   return { cvd: parseFloat(cvd.toFixed(2)), trend };
 }
 
-// ================== MULTI-TF ALIGNMENT ==================
 function calculateAlignmentScore(tfs) {
   const weights = { '1m': 10, '5m': 15, '15m': 25, '1h': 30, '4h': 20 };
   let bullScore = 0, bearScore = 0, totalWeight = 0;
@@ -398,7 +402,6 @@ function calculateAlignmentScore(tfs) {
   };
 }
 
-// ================== SESSION ==================
 function detectSession() {
   const hour = new Date().getUTCHours();
   if (hour >= 13 && hour < 16) return 'LONDON_NY_OVERLAP';
@@ -418,7 +421,6 @@ function getSessionParams(session) {
   }
 }
 
-// ================== LIQUIDATION ZONES ==================
 function detectLiquidationZones(klines) {
   if (!klines || klines.length < 20) return { zones: [], nearestLong: null, nearestShort: null };
   const zones = [];
@@ -439,9 +441,7 @@ function detectLiquidationZones(klines) {
   return { zones: zones.slice(-10), nearestLong: longLiqs[0]?.price ?? null, nearestShort: shortLiqs[0]?.price ?? null };
 }
 
-// ================== LEVEL 5: ENSEMBLE STRATEGIES ==================
 function trendFollowerSignal(ctx) {
-  // Ikut trend mayor (1h & 15m)
   let score = 0;
   if (ctx.htf1hTrend === 'UP') score += 2;
   if (ctx.htf1hTrend === 'DOWN') score -= 2;
@@ -457,7 +457,6 @@ function trendFollowerSignal(ctx) {
 }
 
 function meanReverterSignal(ctx) {
-  // Beli saat oversold di lower BB, jual saat overbought di upper BB
   let score = 0;
   if (ctx.rsi < 35) score += 2;
   else if (ctx.rsi < 45) score += 1;
@@ -469,14 +468,13 @@ function meanReverterSignal(ctx) {
     if (ctx.bbPosition > 0.85) score -= 2;
     else if (ctx.bbPosition > 0.7) score -= 1;
   }
-  if (ctx.regime !== 'RANGING') score *= 0.5; // mean reversion hanya valid di ranging
+  if (ctx.regime !== 'RANGING') score *= 0.5;
   if (score >= 3) return { signal: 'BUY', strength: score / 4 };
   if (score <= -3) return { signal: 'SELL', strength: Math.abs(score) / 4 };
   return { signal: 'HOLD', strength: 0 };
 }
 
 function momentumSignal(ctx) {
-  // MACD + RSI momentum
   let score = 0;
   if (ctx.macdStatus?.includes('GOLDEN')) score += 2;
   if (ctx.macdStatus?.includes('DEATH')) score -= 2;
@@ -490,7 +488,6 @@ function momentumSignal(ctx) {
 }
 
 function breakoutSignal(ctx, currentPrice) {
-  // Breakout S/R dengan volume
   let score = 0;
   const nearResistance = ctx.resistance && Math.abs(currentPrice - ctx.resistance) / ctx.resistance < 0.005;
   const nearSupport = ctx.support && Math.abs(currentPrice - ctx.support) / ctx.support < 0.005;
@@ -505,7 +502,6 @@ function breakoutSignal(ctx, currentPrice) {
 }
 
 function orderFlowSignal(ctx) {
-  // CVD + order book + imbalance
   let score = 0;
   if (ctx.cvdTrend === 'buying') score += 2;
   if (ctx.cvdTrend === 'selling') score -= 2;
@@ -526,25 +522,19 @@ function runEnsemble(ctx, currentPrice) {
     breakout: breakoutSignal(ctx, currentPrice),
     order_flow: orderFlowSignal(ctx)
   };
-
-  // Weighted voting
   const weights = { trend_follower: 1.3, mean_reverter: 0.9, momentum: 1.1, breakout: 1.0, order_flow: 1.2 };
   let buyScore = 0, sellScore = 0, totalWeight = 0;
-
   for (const [name, sig] of Object.entries(signals)) {
     const w = weights[name];
     totalWeight += w;
     if (sig.signal === 'BUY') buyScore += w * sig.strength;
     if (sig.signal === 'SELL') sellScore += w * sig.strength;
   }
-
   const buyPct = totalWeight > 0 ? (buyScore / totalWeight) * 100 : 0;
   const sellPct = totalWeight > 0 ? (sellScore / totalWeight) * 100 : 0;
-
   let consensus = 'HOLD';
   if (buyPct > 40 && buyPct > sellPct * 1.5) consensus = 'BUY';
   else if (sellPct > 40 && sellPct > buyPct * 1.5) consensus = 'SELL';
-
   return {
     consensus,
     buyPct: parseFloat(buyPct.toFixed(1)),
@@ -554,14 +544,12 @@ function runEnsemble(ctx, currentPrice) {
   };
 }
 
-// ================== LEVEL 5: FEATURE VECTOR SCORING ==================
 function computeFeatureScore(ctx, ensemble) {
-  // ML-style weighted scoring — bukan ML asli, tapi weighted linear model
   const features = {
     alignment: (ctx.alignmentScore || 0) / 100,
     ensembleBuy: ensemble.buyPct / 100,
     ensembleSell: ensemble.sellPct / 100,
-    rsiPosition: ctx.rsi != null ? 1 - Math.abs(ctx.rsi - 50) / 50 : 0.5,   // 1 = netral, 0 = extreme
+    rsiPosition: ctx.rsi != null ? 1 - Math.abs(ctx.rsi - 50) / 50 : 0.5,
     bbPosition: ctx.bbPosition != null ? 1 - Math.abs(ctx.bbPosition - 0.5) * 2 : 0.5,
     volume: Math.min(1, (ctx.volumeRatio || 1) / 2),
     orderBook: ctx.orderBookImbalance != null ? (ctx.orderBookImbalance + 1) / 2 : 0.5,
@@ -569,35 +557,17 @@ function computeFeatureScore(ctx, ensemble) {
     sessionBonus: ctx.session === 'LONDON_NY_OVERLAP' ? 1 : ctx.session === 'LONDON' || ctx.session === 'NY' ? 0.7 : ctx.session === 'ASIA' ? 0.4 : 0,
     regimeBonus: ctx.regime === 'TRENDING_UP' || ctx.regime === 'TRENDING_DOWN' ? 0.9 : 0.6
   };
+  const weights = { alignment: 2.5, ensembleBuy: 2.0, rsiPosition: 1.0, bbPosition: 1.0, volume: 0.8, orderBook: 1.2, cvd: 1.3, sessionBonus: 0.7, regimeBonus: 0.8 };
+  let maxScore = 0;
+  for (const w of Object.values(weights)) maxScore += w;
 
-  const weights = {
-    alignment: 2.5,
-    ensembleBuy: 2.0,
-    rsiPosition: 1.0,
-    bbPosition: 1.0,
-    volume: 0.8,
-    orderBook: 1.2,
-    cvd: 1.3,
-    sessionBonus: 0.7,
-    regimeBonus: 0.8
-  };
-
-  let rawScore = 0, maxScore = 0;
-  for (const [k, w] of Object.entries(weights)) {
-    rawScore += (features[k] || 0) * w;
-    maxScore += w;
-  }
-
-  // Compute for both directions
   const buyFeatureScore = (features.alignment * 2.5 + features.ensembleBuy * 2.0 + features.rsiPosition * 1.0 +
-                           features.bbPosition * 1.0 + features.volume * 0.8 + features.orderBook * 1.2 +
-                           features.cvd * 1.3 + features.sessionBonus * 0.7 + features.regimeBonus * 0.8) / maxScore * 100;
+    features.bbPosition * 1.0 + features.volume * 0.8 + features.orderBook * 1.2 +
+    features.cvd * 1.3 + features.sessionBonus * 0.7 + features.regimeBonus * 0.8) / maxScore * 100;
 
-  // Sell score = mirror
-  const featuresSell = { ...features, ensembleBuy: features.ensembleSell };
-  const sellFeatureScore = (features.alignment * 2.5 + featuresSell.ensembleBuy * 2.0 + features.rsiPosition * 1.0 +
-                            features.bbPosition * 1.0 + features.volume * 0.8 + (1 - features.orderBook) * 1.2 +
-                            (1 - features.cvd) * 1.3 + features.sessionBonus * 0.7 + features.regimeBonus * 0.8) / maxScore * 100;
+  const sellFeatureScore = (features.alignment * 2.5 + features.ensembleSell * 2.0 + features.rsiPosition * 1.0 +
+    features.bbPosition * 1.0 + features.volume * 0.8 + (1 - features.orderBook) * 1.2 +
+    (1 - features.cvd) * 1.3 + features.sessionBonus * 0.7 + features.regimeBonus * 0.8) / maxScore * 100;
 
   return {
     buyScore: parseFloat(buyFeatureScore.toFixed(1)),
@@ -606,13 +576,9 @@ function computeFeatureScore(ctx, ensemble) {
   };
 }
 
-// ================== LEVEL 5: EVENT CALENDAR ==================
 function checkEventRisk() {
   const today = new Date().toISOString().split('T')[0];
-  if (HIGH_IMPACT_EVENTS.includes(today)) {
-    return { level: 'HIGH', name: 'High-impact event today', date: today };
-  }
-  // Cek 1 hari sebelum & sesudah
+  if (HIGH_IMPACT_EVENTS.includes(today)) return { level: 'HIGH', name: 'High-impact event today', date: today };
   const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
   const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
   if (HIGH_IMPACT_EVENTS.includes(tomorrow)) return { level: 'MEDIUM', name: 'Event besok', date: tomorrow };
@@ -620,38 +586,30 @@ function checkEventRisk() {
   return { level: 'LOW', name: null, date: null };
 }
 
-// ================== LEVEL 5: CORRELATION ==================
 function calculateCorrelation(prices1, prices2) {
   if (!prices1 || !prices2 || prices1.length < 10 || prices2.length < 10) return null;
   const n = Math.min(prices1.length, prices2.length, 30);
   const p1 = prices1.slice(-n);
   const p2 = prices2.slice(-n);
-
   const returns1 = [], returns2 = [];
   for (let i = 1; i < n; i++) {
     returns1.push((p1[i] - p1[i - 1]) / p1[i - 1]);
     returns2.push((p2[i] - p2[i - 1]) / p2[i - 1]);
   }
-
   const mean1 = returns1.reduce((a, b) => a + b, 0) / returns1.length;
   const mean2 = returns2.reduce((a, b) => a + b, 0) / returns2.length;
-
   let cov = 0, var1 = 0, var2 = 0;
   for (let i = 0; i < returns1.length; i++) {
     cov += (returns1[i] - mean1) * (returns2[i] - mean2);
     var1 += Math.pow(returns1[i] - mean1, 2);
     var2 += Math.pow(returns2[i] - mean2, 2);
   }
-
   if (var1 === 0 || var2 === 0) return 0;
   return cov / Math.sqrt(var1 * var2);
 }
 
-// ================== KELLY & ADAPTIVE ==================
 function calculateKellySize(balance) {
-  if (allPnls.length < KELLY_MIN_TRADES) {
-    return { size: RISK_PER_TRADE, reason: `Kurang data (${allPnls.length}/${KELLY_MIN_TRADES})` };
-  }
+  if (allPnls.length < KELLY_MIN_TRADES) return { size: RISK_PER_TRADE, reason: `Kurang data (${allPnls.length}/${KELLY_MIN_TRADES})` };
   const wins = allPnls.filter(p => p > 0);
   const losses = allPnls.filter(p => p <= 0);
   if (wins.length === 0 || losses.length === 0) return { size: RISK_PER_TRADE, reason: 'Imbalance' };
@@ -687,16 +645,12 @@ function calculateDynamicRisk(balance, currentPrice, confidence, sessionMult = 1
   let lot = parseFloat((finalAmount / currentPrice).toFixed(6));
   if (lot < 0.001) lot = 0.001;
   return {
-    tradeAmount: finalAmount,
-    calculatedLot: lot,
-    kellyReason: kelly.reason,
-    perfReason: perf.reason,
-    sessionMult,
+    tradeAmount: finalAmount, calculatedLot: lot,
+    kellyReason: kelly.reason, perfReason: perf.reason, sessionMult,
     finalSizePct: (finalAmount / balance * 100).toFixed(2)
   };
 }
 
-// ================== PERFORMANCE ==================
 function calculateMetrics() {
   if (allPnls.length === 0) return { sharpe: null, profitFactor: null };
   const wins = allPnls.filter(p => p > 0);
@@ -736,7 +690,6 @@ function updatePerformance(pnl) {
   if (dd > maxDrawdown) maxDrawdown = dd;
 }
 
-// ================== LEVEL 5: CONFIDENCE CALIBRATION ==================
 function recordConfidenceOutcome(confidence, isWin) {
   let band;
   if (confidence >= 0.75) band = 'high';
@@ -753,76 +706,56 @@ function getCalibratedConfidence(rawConfidence) {
   else band = 'low';
   const c = confidenceCalibration[band];
   const total = c.wins + c.losses;
-  if (total < 10) return rawConfidence;  // belum cukup data
+  if (total < 10) return rawConfidence;
   const actualRate = c.wins / total;
-  // Kalibrasi: gabung raw + historical (average)
   return (rawConfidence + actualRate) / 2;
 }
 
-// ================== LEVEL 5: AUTO-PARAMETER TUNING ==================
 function tuneParameters() {
   if (allPnls.length < 20) return;
   const recent = allPnls.slice(-20);
   const wins = recent.filter(p => p > 0).length;
   const winrate = wins / recent.length;
-
   let changed = false;
-
-  // Kalau winrate rendah, perketat filter
   if (winrate < 0.4) {
     if (dynamicParams.minAlignment < 85) { dynamicParams.minAlignment += 5; changed = true; }
     if (dynamicParams.minConfidence < 0.8) { dynamicParams.minConfidence += 0.05; changed = true; }
     if (dynamicParams.kellyFraction > 0.1) { dynamicParams.kellyFraction -= 0.05; changed = true; }
-  }
-  // Kalau winrate tinggi, longgarkan sedikit
-  else if (winrate > 0.65) {
+  } else if (winrate > 0.65) {
     if (dynamicParams.minAlignment > 65) { dynamicParams.minAlignment -= 3; changed = true; }
     if (dynamicParams.minConfidence > 0.55) { dynamicParams.minConfidence -= 0.03; changed = true; }
     if (dynamicParams.kellyFraction < 0.35) { dynamicParams.kellyFraction += 0.02; changed = true; }
   }
-
-  // Sesuaikan ATR SL/TP berdasarkan volatilitas realized
   if (recent.length >= 10) {
     const avgWin = recent.filter(p => p > 0).reduce((a, b) => a + b, 0) / Math.max(1, wins);
     const avgLoss = Math.abs(recent.filter(p => p <= 0).reduce((a, b) => a + b, 0) / Math.max(1, recent.length - wins));
     if (avgWin > 0 && avgLoss > 0) {
       const ratio = avgWin / avgLoss;
-      // Kalau payoff ratio rendah (<1), perbesar TP multiplier
       if (ratio < 1.2 && dynamicParams.atrTpMult < 4.0) { dynamicParams.atrTpMult += 0.1; changed = true; }
       if (ratio > 2.5 && dynamicParams.atrTpMult > 2.0) { dynamicParams.atrTpMult -= 0.1; changed = true; }
     }
   }
-
   if (changed) {
-    console.log(`[AutoTune] Param updated: align≥${dynamicParams.minAlignment}, conf≥${dynamicParams.minConfidence.toFixed(2)}, kelly=${dynamicParams.kellyFraction.toFixed(2)}, tpMult=${dynamicParams.atrTpMult.toFixed(1)}`);
+    console.log(`[AutoTune] align≥${dynamicParams.minAlignment}, conf≥${dynamicParams.minConfidence.toFixed(2)}, kelly=${dynamicParams.kellyFraction.toFixed(2)}, tpMult=${dynamicParams.atrTpMult.toFixed(1)}`);
   }
 }
 
-// ================== LEVEL 5: BACKTEST ==================
 function backtestStrategy(klines, params = {}) {
   if (!klines || klines.length < 100) return null;
-
   const slMult = params.slMult ?? dynamicParams.atrSlMult;
   const tpMult = params.tpMult ?? dynamicParams.atrTpMult;
   const fee = TAKER_FEE * 2;
-
-  const highs = klines.map(k => k.high);
-  const lows = klines.map(k => k.low);
   const closes = klines.map(k => k.close);
-
   let trades = [];
   let position = null;
   let balance = 10000;
-  let startBalance = 10000;
+  const startBalance = 10000;
 
   for (let i = 50; i < klines.length; i++) {
     const price = closes[i];
-
-    // Manage existing position
     if (position) {
       const priceDiff = position.type === 'BUY' ? (price - position.entry) : (position.entry - price);
       const pct = priceDiff / position.entry;
-
       if (price <= position.sl || price >= position.tp || i === klines.length - 1) {
         const grossPnl = position.size * pct;
         const netPnl = grossPnl - position.size * fee;
@@ -832,21 +765,15 @@ function backtestStrategy(klines, params = {}) {
       }
       continue;
     }
-
-    // Compute indicators
     const slice = klines.slice(0, i + 1);
     const sliceCloses = slice.map(k => k.close);
     const rsi = calculateRSI(sliceCloses, 14);
     const ema20 = calculateEMA(sliceCloses, 20);
     const atr = calculateATR(slice.map(k => k.high), slice.map(k => k.low), sliceCloses, 14);
-
     if (!rsi || !atr) continue;
-
-    // Simple strategy: RSI < 35 + price > EMA20 → BUY; RSI > 65 + price < EMA20 → SELL
     let signal = null;
     if (rsi < 35 && price > ema20) signal = 'BUY';
     else if (rsi > 65 && price < ema20) signal = 'SELL';
-
     if (signal) {
       const size = balance * 0.02;
       const sl = signal === 'BUY' ? price - atr * slMult : price + atr * slMult;
@@ -854,18 +781,13 @@ function backtestStrategy(klines, params = {}) {
       position = { type: signal, entry: price, sl, tp, size };
     }
   }
-
   if (trades.length < 5) return null;
-
   const wins = trades.filter(t => t.pnl > 0).length;
   const totalPnl = balance - startBalance;
   const totalWin = trades.filter(t => t.pnl > 0).reduce((a, b) => a + b.pnl, 0);
   const totalLoss = Math.abs(trades.filter(t => t.pnl <= 0).reduce((a, b) => a + b.pnl, 0));
-
   return {
-    trades: trades.length,
-    wins,
-    losses: trades.length - wins,
+    trades: trades.length, wins, losses: trades.length - wins,
     winrate: parseFloat((wins / trades.length * 100).toFixed(1)),
     totalPnl: parseFloat(totalPnl.toFixed(2)),
     profitFactor: totalLoss > 0 ? parseFloat((totalWin / totalLoss).toFixed(2)) : null,
@@ -873,20 +795,17 @@ function backtestStrategy(klines, params = {}) {
   };
 }
 
-// ================== TELEGRAM ==================
 async function sendTelegram(message) {
   if (!TELEGRAM_ENABLED) return;
   try {
     await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: message, parse_mode: 'HTML' }),
       signal: AbortSignal.timeout(8000)
     });
   } catch (e) { console.warn('[Telegram]', e.message); }
 }
 
-// ================== MARKET DATA ==================
 async function fetchKlines(symbol = SYMBOL, interval = '1m', limit = 60) {
   try {
     const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`, { signal: AbortSignal.timeout(8000) });
@@ -925,59 +844,40 @@ async function fetchFearGreed() {
 }
 
 let prevOI = null;
-let ethPriceHistory = [];
 
 async function updateMarketContext() {
   try {
     const [k1m, k5m, k15m, k1h, k4h, eth15m, funding, oi, fng, ob] = await Promise.all([
-      fetchKlines(SYMBOL, '1m', 100),
-      fetchKlines(SYMBOL, '5m', 60),
-      fetchKlines(SYMBOL, '15m', 30),
-      fetchKlines(SYMBOL, '1h', 24),
-      fetchKlines(SYMBOL, '4h', 20),
-      fetchKlines(ETH_SYMBOL, '15m', 30),
-      fetchFundingRate(),
-      fetchOpenInterest(),
-      fetchFearGreed(),
-      fetchOrderBook(100)
+      fetchKlines(SYMBOL, '1m', 100), fetchKlines(SYMBOL, '5m', 60), fetchKlines(SYMBOL, '15m', 30),
+      fetchKlines(SYMBOL, '1h', 24), fetchKlines(SYMBOL, '4h', 20), fetchKlines(ETH_SYMBOL, '15m', 30),
+      fetchFundingRate(), fetchOpenInterest(), fetchFearGreed(), fetchOrderBook(100)
     ]);
 
     if (k1m && k1m.length >= 15) {
       const highs = k1m.map(k => k.high);
       const lows = k1m.map(k => k.low);
       const closes = k1m.map(k => k.close);
-
       const atr = calculateATR(highs, lows, closes, ATR_PERIOD);
-      if (atr) {
-        marketContext.atr = atr;
-        marketContext.atrPct = atr / closes[closes.length - 1];
-      }
-
+      if (atr) { marketContext.atr = atr; marketContext.atrPct = atr / closes[closes.length - 1]; }
       if (k1m.length >= 20) {
         const recentVols = k1m.slice(-20).map(k => k.volume);
         const avgVol = recentVols.reduce((a, b) => a + b, 0) / recentVols.length;
         marketContext.volumeRatio = k1m[k1m.length - 1].volume / avgVol;
       }
-
       const sr = findSupportResistance(highs, lows, 50);
       marketContext.support = sr.support;
       marketContext.resistance = sr.resistance;
       marketContext.regime = detectMarketRegime(closes, atr);
-
       const rsiSeries = calculateRSISeries(closes, RSI_PERIOD);
       marketContext.rsiDivergence = detectRSIDivergence(closes, rsiSeries, 20);
       marketContext.candlePattern = detectCandlePattern(k1m);
-
       const cvd = calculateCVD(k1m.slice(-60));
       if (cvd) { marketContext.cvd1m = cvd.cvd; marketContext.cvdTrend = cvd.trend; }
-
       const liq = detectLiquidationZones(k1m);
-      marketContext.liquidationZones = liq.zones;
       marketContext.nearestLongLiq = liq.nearestLong;
       marketContext.nearestShortLiq = liq.nearestShort;
     }
 
-    // Multi-TF alignment
     const tfData = {};
     const addTf = (arr, key, period) => {
       if (!arr) return;
@@ -985,11 +885,7 @@ async function updateMarketContext() {
       const ema = calculateEMA(closes, period);
       tfData[key] = { trend: closes[closes.length - 1] > ema ? 'UP' : 'DOWN', rsi: calculateRSI(closes, 14) };
     };
-    addTf(k1m, '1m', 20);
-    addTf(k5m, '5m', 20);
-    addTf(k15m, '15m', 20);
-    addTf(k1h, '1h', 10);
-    addTf(k4h, '4h', 10);
+    addTf(k1m, '1m', 20); addTf(k5m, '5m', 20); addTf(k15m, '15m', 20); addTf(k1h, '1h', 10); addTf(k4h, '4h', 10);
 
     if (Object.keys(tfData).length >= 3) {
       const alignment = calculateAlignmentScore(tfData);
@@ -998,7 +894,6 @@ async function updateMarketContext() {
       marketContext.dominantDirection = alignment.dominantDirection;
     }
 
-    // HTF
     if (k15m && k15m.length >= 10) {
       const closes15 = k15m.map(k => k.close);
       const ema10 = calculateEMA(closes15, 10);
@@ -1008,6 +903,7 @@ async function updateMarketContext() {
       else if (lastClose < ema10 && marketContext.htfChangePct < -0.002) marketContext.htfTrend = 'DOWN';
       else marketContext.htfTrend = 'FLAT';
     }
+
     if (k1h && k1h.length >= 10) {
       const closes1h = k1h.map(k => k.close);
       const ema10 = calculateEMA(closes1h, 10);
@@ -1017,10 +913,8 @@ async function updateMarketContext() {
       else marketContext.htf1hTrend = 'FLAT';
     }
 
-    // Session
     marketContext.session = detectSession();
 
-    // Order book
     if (ob) {
       const oba = analyzeOrderBook(ob);
       if (oba) {
@@ -1030,39 +924,29 @@ async function updateMarketContext() {
       }
     }
 
-    // Institutional
     if (funding !== null) marketContext.fundingRate = funding;
     if (oi !== null) {
       marketContext.openInterest = oi;
       if (prevOI !== null && prevOI > 0) marketContext.oiChangePct = (oi - prevOI) / prevOI;
       prevOI = oi;
     }
-    if (fng) {
-      marketContext.fearGreed = fng.value;
-      marketContext.fearGreedLabel = fng.label;
-    }
+    if (fng) { marketContext.fearGreed = fng.value; marketContext.fearGreedLabel = fng.label; }
 
-    // LEVEL 5: ETH correlation
     if (eth15m && eth15m.length >= 10) {
       const ethCloses = eth15m.map(k => k.close);
       const ema10 = calculateEMA(ethCloses, 10);
       const lastClose = ethCloses[ethCloses.length - 1];
       marketContext.ethTrend = lastClose > ema10 ? 'UP' : 'DOWN';
-
-      // BTC vs ETH correlation
       if (k15m) {
         const btcCloses = k15m.map(k => k.close);
         marketContext.correlation = calculateCorrelation(btcCloses, ethCloses);
       }
     }
 
-    // LEVEL 5: Event risk
     const eventRisk = checkEventRisk();
     marketContext.eventRiskLevel = eventRisk.level;
     marketContext.nextEventName = eventRisk.name;
-  } catch (e) {
-    console.warn('[MarketContext]', e.message);
-  }
+  } catch (e) { console.warn('[MarketContext]', e.message); }
 }
 
 function calculateATRSLTP(entryPrice, side) {
@@ -1122,9 +1006,14 @@ function checkDailyReset() {
   if (today !== dailyStartDate) {
     dailyStartDate = today; dailyStartBalance = virtualBalance; dailyPnl = 0; dailyTrades = 0;
   }
+  // Reset daily Gemini counter
+  if (today !== dailyGeminiRequestsDate) {
+    dailyGeminiRequestsDate = today;
+    dailyGeminiRequests = 0;
+    hourlyRequests = [];
+  }
 }
 
-// ================== AUTH ==================
 function requireAuth(req, res, next) {
   if (!CONTROL_API_KEY) return next();
   const key = req.headers['x-api-key'] || req.query.key;
@@ -1132,7 +1021,6 @@ function requireAuth(req, res, next) {
   next();
 }
 
-// ================== PRICE ==================
 async function fetchPrice() {
   try {
     const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${SYMBOL}`, { signal: AbortSignal.timeout(8000) });
@@ -1145,7 +1033,6 @@ async function fetchPrice() {
   throw new Error('Semua sumber harga BTC gagal.');
 }
 
-// ================== BROKER ==================
 async function executeBrokerOpen(action, price, lot) {
   if (!ENABLE_LIVE_BROKER) return { ok: true, positionId: `SIM-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, simulated: true };
   try {
@@ -1172,48 +1059,36 @@ async function executeBrokerClose(positionId) {
   } catch (err) { return { ok: false, error: err.message }; }
 }
 
-// ================== TP/SL ==================
 async function checkStopLossTakeProfit(currentPrice) {
   if (activeTrades.length === 0) return { closed: false, pnl: 0, count: 0 };
   let closedPnl = 0;
   const remaining = [];
   let anyClosed = false, closedCount = 0;
-
   for (const trade of activeTrades) {
     const diff = trade.type === 'BUY' ? (currentPrice - trade.entryPrice) : (trade.entryPrice - currentPrice);
     const pct = diff / trade.entryPrice;
     const { netPnl, totalFee } = computeNetPnl(trade, currentPrice);
-
     if (!trade.peakPct || pct > trade.peakPct) trade.peakPct = pct;
     if (!trade.peakPrice) trade.peakPrice = currentPrice;
     if (trade.type === 'BUY' && currentPrice > trade.peakPrice) trade.peakPrice = currentPrice;
     if (trade.type === 'SELL' && currentPrice < trade.peakPrice) trade.peakPrice = currentPrice;
-
     let hitSL = false, hitTP = false;
     if (trade.type === 'BUY') { hitSL = currentPrice <= trade.slPrice; hitTP = currentPrice >= trade.tpPrice; }
     else { hitSL = currentPrice >= trade.slPrice; hitTP = currentPrice <= trade.tpPrice; }
-
     const hitCap = pct >= HARD_TP_CAP_PCT;
-
     let hitChandelier = false;
     if (trade.peakPct >= CHANDELIER_ACTIVATION_PCT && marketContext.atr) {
       const dist = marketContext.atr * CHANDELIER_ATR_MULT;
       if (trade.type === 'BUY') hitChandelier = currentPrice <= trade.peakPrice - dist;
       else hitChandelier = currentPrice >= trade.peakPrice + dist;
     }
-
     if (hitTP || hitSL || hitCap || hitChandelier) {
       const reason = hitSL ? 'SL' : hitTP ? 'TP' : hitCap ? 'TP-CAP' : 'CHANDELIER';
       const result = await executeBrokerClose(trade.positionId);
       if (!result.ok) { remaining.push(trade); continue; }
-
       closedPnl += netPnl; cumulativeFee += totalFee; cumulativeTrades++; dailyTrades++; dailyPnl += netPnl;
       updatePerformance(netPnl);
-
-      // LEARNING: confidence calibration
       if (trade.confidence != null) recordConfidenceOutcome(trade.confidence, netPnl > 0);
-
-      // LEARNING: pattern outcome
       if (trade.signature) {
         recordPatternOutcome(trade.signature, netPnl > 0);
         if (trade.session && patternStats.bySession[trade.session]) {
@@ -1226,8 +1101,6 @@ async function checkStopLossTakeProfit(currentPrice) {
           else patternStats.byRegime[trade.regime].losses++;
         }
       }
-
-      // LEARNING: ensemble outcome
       if (trade.ensembleSignals) {
         for (const [name, sig] of Object.entries(trade.ensembleSignals)) {
           if (sig.signal === trade.type) {
@@ -1236,7 +1109,6 @@ async function checkStopLossTakeProfit(currentPrice) {
           }
         }
       }
-
       anyClosed = true; closedCount++;
       tradeHistory.unshift({
         time: new Date().toLocaleTimeString('id-ID'),
@@ -1244,27 +1116,102 @@ async function checkStopLossTakeProfit(currentPrice) {
         open: trade.entryPrice.toFixed(2), close: currentPrice.toFixed(2),
         pnl: netPnl, balanceAfter: virtualBalance + closedPnl
       });
-
       sendTelegram(`${netPnl >= 0 ? '✅' : '❌'} <b>${reason} ${trade.type}</b>\nPnL: $${netPnl.toFixed(2)}\nBalance: $${(virtualBalance + closedPnl).toFixed(2)}`);
     } else {
       remaining.push(trade);
     }
   }
-
   activeTrades = remaining;
   if (anyClosed) {
     virtualBalance += closedPnl;
     setCloseEvent(closedPnl, 'TP/SL');
-    // Auto-tune after close
     tuneParameters();
   }
   return { closed: anyClosed, pnl: closedPnl, count: closedCount };
 }
 
-// ================== GEMINI ==================
-async function callSingleModel(modelName, systemPrompt, attempts = 2) {
+// ================== QUOTA MANAGEMENT HELPERS ==================
+function canCallGemini() {
+  // Cek cooldown
+  if (quotaCooldown.active && Date.now() < quotaCooldown.until) {
+    return { ok: false, reason: `cooldown until ${new Date(quotaCooldown.until).toLocaleTimeString('id-ID')}` };
+  }
+  // Cooldown selesai → reset
+  if (quotaCooldown.active && Date.now() >= quotaCooldown.until) {
+    console.log('[Quota] Cooldown selesai, coba lagi.');
+    quotaCooldown.active = false;
+    quotaCooldown.hits = 0;
+  }
+  // Cek daily limit
+  if (dailyGeminiRequests >= DAILY_REQUEST_LIMIT) {
+    return { ok: false, reason: `daily limit ${DAILY_REQUEST_LIMIT} reached` };
+  }
+  // Cek hourly rate
+  const oneHourAgo = Date.now() - 3600000;
+  hourlyRequests = hourlyRequests.filter(t => t > oneHourAgo);
+  if (hourlyRequests.length >= MAX_REQUESTS_PER_HOUR) {
+    return { ok: false, reason: `hourly limit ${MAX_REQUESTS_PER_HOUR} reached` };
+  }
+  return { ok: true };
+}
+
+function trackGeminiCall() {
+  dailyGeminiRequests++;
+  hourlyRequests.push(Date.now());
+}
+
+function handle429() {
+  quotaCooldown.hits++;
+  let duration;
+  if (quotaCooldown.hits >= 3) duration = COOLDOWN_AFTER_429_HITS_3_MS;
+  else if (quotaCooldown.hits >= 2) duration = COOLDOWN_AFTER_429_HITS_2_MS;
+  else duration = COOLDOWN_AFTER_429_MS;
+
+  quotaCooldown.active = true;
+  quotaCooldown.until = Date.now() + duration;
+  console.warn(`[Quota] Kena 429! Cooldown ${duration / 60000} menit (hit #${quotaCooldown.hits})`);
+  sendTelegram(`⚠️ <b>Gemini quota habis</b>\nCooldown ${duration / 60000} menit.\nBot lanjut pakai fallback mode.`);
+}
+
+// ================== SMART CACHE ==================
+function rsiBand(rsi) {
+  if (rsi == null) return 'na';
+  if (rsi < 35) return 'low';
+  if (rsi > 65) return 'high';
+  return 'mid';
+}
+function alignBand(a) {
+  if (a == null) return 'na';
+  if (a < 50) return 'low';
+  if (a > 75) return 'high';
+  return 'mid';
+}
+
+function shouldSkipGemini(currentPrice, rsiValue, alignmentScore, regime) {
+  if (!geminiCache.decision) return false;
+  const age = Date.now() - geminiCache.timestamp;
+  if (age > CACHE_TTL_MS) return false;
+  // Skip kalau harga gerak kecil
+  const priceChange = Math.abs(currentPrice - geminiCache.price) / geminiCache.price;
+  if (priceChange > CACHE_PRICE_THRESHOLD) return false;
+  // Skip kalau kondisi berubah
+  if (regime !== geminiCache.regime) return false;
+  if (rsiBand(rsiValue) !== geminiCache.rsiBand) return false;
+  if (alignBand(alignmentScore) !== geminiCache.alignmentBand) return false;
+  return true;   // semua sama → skip
+}
+
+// ================== GEMINI CALL (HEMAT KUOTA) ==================
+async function callSingleModel(modelName, systemPrompt, attempts = 1) {
+  const guard = canCallGemini();
+  if (!guard.ok) {
+    console.warn(`[Gemini] Skip call: ${guard.reason}`);
+    return { ok: false, error: new Error(guard.reason), quotaBlocked: true };
+  }
+
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
+      trackGeminiCall();
       const response = await ai.models.generateContent({
         model: modelName, contents: systemPrompt,
         config: { responseMimeType: 'application/json' }
@@ -1276,104 +1223,58 @@ async function callSingleModel(modelName, systemPrompt, attempts = 2) {
       }
     } catch (e) {
       const msg = e.message || '';
-      const isRetryable = msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('high demand') || msg.includes('overloaded') || msg.includes('500');
-      console.warn(`[Gemini][${modelName}][a${attempt}] ${msg.slice(0, 100)}`);
-      if (!isRetryable || attempt >= attempts) break;
-      await new Promise(r => setTimeout(r, 2000 * attempt));
+      console.warn(`[Gemini][${modelName}][a${attempt}] ${msg.slice(0, 120)}`);
+
+      // 429 = quota — jangan retry, langsung stop
+      if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')) {
+        handle429();
+        return { ok: false, error: e, quotaExceeded: true };
+      }
+
+      // 503 = server sibuk — boleh retry sekali
+      if (msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('500')) {
+        if (attempt < attempts) {
+          await new Promise(r => setTimeout(r, 3000));
+          continue;
+        }
+        return { ok: false, error: e };
+      }
+
+      // 404 = model tidak tersedia — stop, jangan retry
+      if (msg.includes('404') || msg.includes('no longer available')) {
+        return { ok: false, error: e, modelUnavailable: true };
+      }
+
+      return { ok: false, error: e };
     }
   }
   return { ok: false };
 }
 
-async function callGeminiWithConsensus(systemPrompt) {
-  const primaryResults = await Promise.all(GEMINI_MODELS_PRIMARY.map(m => callSingleModel(m, systemPrompt, 2)));
-  const validResults = primaryResults.filter(r => r.ok);
+async function callGeminiSingle(systemPrompt) {
+  // Pakai 1 model saja — fallback hanya kalau model utama error bukan quota
+  const primary = await callSingleModel(GEMINI_MODELS_PRIMARY[0], systemPrompt, 1);
 
-  if (validResults.length >= 2) {
-    const actions = validResults.map(r => r.decision.action);
-    const allSame = actions.every(a => a === actions[0]);
-    if (allSame) {
-      const avgConf = validResults.reduce((s, r) => s + (r.decision.confidence || 0), 0) / validResults.length;
-      geminiSuccessCount++;
-      return {
-        ok: true,
-        decision: {
-          action: actions[0],
-          confidence: Math.min(0.95, avgConf * 1.2),
-          reasoning: `[KONSENSUS ${validResults.length}x] ${validResults[0].decision.reasoning}`
-        },
-        consensus: 'STRONG', models: validResults.length
-      };
-    } else {
-      return {
-        ok: true,
-        decision: { action: 'HOLD', confidence: 0.3, reasoning: `[SPLIT] ${actions.join(' vs ')}` },
-        consensus: 'SPLIT', models: validResults.length
-      };
-    }
+  if (primary.ok) { geminiSuccessCount++; return { ok: true, decision: primary.decision, model: GEMINI_MODELS_PRIMARY[0] }; }
+
+  // Kalau quota → jangan lanjut (menghemat)
+  if (primary.quotaExceeded || primary.quotaBlocked) {
+    geminiFailCount++;
+    return { ok: false, quotaExceeded: true };
   }
 
-  if (validResults.length === 1) {
-    const fallback = await callSingleModel(GEMINI_MODELS_FALLBACK[0], systemPrompt, 2);
-    if (fallback.ok && fallback.decision.action === validResults[0].decision.action) {
-      geminiSuccessCount++;
-      return {
-        ok: true,
-        decision: {
-          action: validResults[0].decision.action,
-          confidence: Math.min(0.85, (validResults[0].decision.confidence || 0.5) * 1.1),
-          reasoning: `[KONSENSUS 2x] ${validResults[0].decision.reasoning}`
-        },
-        consensus: 'MODERATE', models: 2
-      };
-    }
-    geminiSuccessCount++;
-    return {
-      ok: true,
-      decision: {
-        action: validResults[0].decision.action,
-        confidence: (validResults[0].decision.confidence || 0.5) * 0.8,
-        reasoning: `[SINGLE] ${validResults[0].decision.reasoning}`
-      },
-      consensus: 'SINGLE', models: 1
-    };
+  // Kalau model unavailable → coba fallback
+  if (primary.modelUnavailable && GEMINI_MODELS_FALLBACK.length > 0) {
+    const fb = await callSingleModel(GEMINI_MODELS_FALLBACK[0], systemPrompt, 1);
+    if (fb.ok) { geminiSuccessCount++; return { ok: true, decision: fb.decision, model: GEMINI_MODELS_FALLBACK[0] }; }
   }
 
   geminiFailCount++;
   return { ok: false };
 }
 
-// ================== SELF-LEARNING HELPERS ==================
-function generateSignature(ctx) {
-  return [ctx.regime, ctx.htfTrend, ctx.session, ctx.rsiDivergence, ctx.candlePattern].join('|');
-}
-
-function recordPatternOutcome(signature, isWin) {
-  if (!patternStats.bySignature[signature]) patternStats.bySignature[signature] = { wins: 0, losses: 0 };
-  if (isWin) patternStats.bySignature[signature].wins++;
-  else patternStats.bySignature[signature].losses++;
-}
-
-function getPatternWinrate(signature) {
-  const s = patternStats.bySignature[signature];
-  if (!s) return null;
-  const total = s.wins + s.losses;
-  if (total < 3) return null;
-  return { rate: s.wins / total, wins: s.wins, losses: s.losses, total };
-}
-
-function getBestPatterns(topN = 3) {
-  return Object.entries(patternStats.bySignature)
-    .filter(([, s]) => (s.wins + s.losses) >= 3)
-    .map(([sig, s]) => ({
-      sig, winrate: s.wins / (s.wins + s.losses), wins: s.wins, losses: s.losses, total: s.wins + s.losses
-    }))
-    .sort((a, b) => b.winrate - a.winrate)
-    .slice(0, topN);
-}
-
 // ================== FALLBACK ==================
-function fallbackDecision(currentPrice, rsiValue, macdText, rsiText) {
+function fallbackDecision(currentPrice, rsiValue, macdText, rsiText, ensemble) {
   const decision = { action: 'HOLD', reasoning: '', confidence: 0 };
   if (activeTrades.length > 0) {
     const avgEntry = activeTrades.reduce((s, t) => s + t.entryPrice, 0) / activeTrades.length;
@@ -1385,12 +1286,18 @@ function fallbackDecision(currentPrice, rsiValue, macdText, rsiText) {
     else { decision.action = 'HOLD'; decision.reasoning = `Fallback HOLD ${(pct * 100).toFixed(2)}%`; }
   } else {
     const align = marketContext.alignmentScore;
-    if (align != null && align >= dynamicParams.minAlignment && marketContext.dominantDirection === 'BULL' && rsiValue < 55) {
-      decision.action = 'BUY'; decision.reasoning = `Fallback BUY alignment ${align}%`;
-    } else if (align != null && align >= dynamicParams.minAlignment && marketContext.dominantDirection === 'BEAR' && rsiValue > 45) {
-      decision.action = 'SELL'; decision.reasoning = `Fallback SELL alignment ${align}%`;
+    // Pakai ensemble sebagai pengganti AI
+    if (ensemble && ensemble.consensus === 'BUY' && align != null && align >= dynamicParams.minAlignment && marketContext.dominantDirection === 'BULL') {
+      decision.action = 'BUY';
+      decision.reasoning = `Fallback ENSEMBLE BUY (align ${align}, ens ${ensemble.buyPct}%)`;
+      decision.confidence = Math.min(0.7, ensemble.buyPct / 100);
+    } else if (ensemble && ensemble.consensus === 'SELL' && align != null && align >= dynamicParams.minAlignment && marketContext.dominantDirection === 'BEAR') {
+      decision.action = 'SELL';
+      decision.reasoning = `Fallback ENSEMBLE SELL (align ${align}, ens ${ensemble.sellPct}%)`;
+      decision.confidence = Math.min(0.7, ensemble.sellPct / 100);
     } else {
-      decision.action = 'HOLD'; decision.reasoning = `Fallback HOLD align=${align ?? 'N/A'}`;
+      decision.action = 'HOLD';
+      decision.reasoning = `Fallback HOLD (align=${align ?? 'N/A'}, ens=${ensemble?.consensus ?? 'N/A'})`;
     }
   }
   return decision;
@@ -1441,36 +1348,25 @@ async function runAutonomousAgent() {
     const session = marketContext.session;
     const sessionParams = getSessionParams(session);
 
-    // LEVEL 5: Ensemble voting
     const ensembleCtx = {
       rsi: rsiValue, macdStatus: macdText, emaTrend,
       bbPosition: marketContext.bbPosition,
-      htfTrend: marketContext.htfTrend,
-      htf1hTrend: marketContext.htf1hTrend,
-      regime: marketContext.regime,
-      volumeRatio: marketContext.volumeRatio,
-      cvdTrend: marketContext.cvdTrend,
-      orderBookImbalance: marketContext.orderBookImbalance,
+      htfTrend: marketContext.htfTrend, htf1hTrend: marketContext.htf1hTrend,
+      regime: marketContext.regime, volumeRatio: marketContext.volumeRatio,
+      cvdTrend: marketContext.cvdTrend, orderBookImbalance: marketContext.orderBookImbalance,
       oiChangePct: marketContext.oiChangePct,
-      support: marketContext.support,
-      resistance: marketContext.resistance
+      support: marketContext.support, resistance: marketContext.resistance
     };
     const ensemble = runEnsemble(ensembleCtx, currentPrice);
 
-    // LEVEL 5: Feature scoring
     const featureScore = computeFeatureScore({
-      alignmentScore: marketContext.alignmentScore,
-      rsi: rsiValue,
-      bbPosition: marketContext.bbPosition,
-      volumeRatio: marketContext.volumeRatio,
-      orderBookImbalance: marketContext.orderBookImbalance,
-      cvdTrend: marketContext.cvdTrend,
-      session,
-      regime: marketContext.regime
+      alignmentScore: marketContext.alignmentScore, rsi: rsiValue,
+      bbPosition: marketContext.bbPosition, volumeRatio: marketContext.volumeRatio,
+      orderBookImbalance: marketContext.orderBookImbalance, cvdTrend: marketContext.cvdTrend,
+      session, regime: marketContext.regime
     }, ensemble);
     marketContext.featureScore = featureScore.buyScore;
 
-    // Signature
     const signature = generateSignature({
       regime: marketContext.regime, htfTrend: marketContext.htfTrend,
       session, rsiDivergence: marketContext.rsiDivergence, candlePattern: marketContext.candlePattern
@@ -1479,7 +1375,7 @@ async function runAutonomousAgent() {
     const bestPatterns = getBestPatterns(3);
 
     const winRate = calculateWinRate(20);
-    const winRateText = winRate ? `${(winRate.rate * 100).toFixed(0)}% (${winRate.wins}W/${winRate.losses}L)` : 'N/A';
+    const winRateText = winRate ? `${(winRate.rate * 100).toFixed(0)}%` : 'N/A';
     const metrics = calculateMetrics();
 
     const dailyLossPct = (virtualBalance - dailyStartBalance) / dailyStartBalance;
@@ -1488,154 +1384,122 @@ async function runAutonomousAgent() {
     const feeGuardActive = feeRatio >= MAX_CUMULATIVE_FEE_PCT;
     const alignScore = marketContext.alignmentScore;
 
-    // Reflection
     const recentClosed = tradeHistory.filter(t => Number.isFinite(t.pnl) && t.pnl !== 0).slice(0, 5);
     const reflectionCtx = recentClosed.length > 0
-      ? `5 trade: ${recentClosed.map(t => `$${t.pnl.toFixed(2)}`).join(', ')}\nStreak: ${consecutiveWins}W/${consecutiveLosses}L\nPattern ini: ${sigWinrate ? `${(sigWinrate.rate * 100).toFixed(0)}%` : 'baru'}`
+      ? `5 trade: ${recentClosed.map(t => `$${t.pnl.toFixed(2)}`).join(', ')}\nStreak: ${consecutiveWins}W/${consecutiveLosses}L`
       : '(Sesi awal)';
 
-    // ==================== PROMPT LEVEL 5 ====================
-    const systemPrompt = `
-Kamu adalah "Orion v5", AI Trading Agent BTC (${DISPLAY}) dengan ENSEMBLE + ML-SCORE + ADAPTIVE system.
-
-═══════════ ENSEMBLE VOTING (5 strategi independen) ═══════════
-Konsensus: ${ensemble.consensus} (buy ${ensemble.buyPct}% vs sell ${ensemble.sellPct}%)
-${Object.entries(ensemble.signals).map(([name, sig]) => `  - ${name}: ${sig.signal} (strength ${(sig.strength * 100).toFixed(0)}%)`).join('\n')}
-
-═══════════ FEATURE SCORE (ML-weighted) ═══════════
-Buy Score: ${featureScore.buyScore}/100
-Sell Score: ${featureScore.sellScore}/100
-
-═══════════ DATA PASAR ═══════════
-Harga: $${currentPrice.toFixed(2)}
-RSI: ${rsiText} | EMA20: ${emaTrend} | MACD: ${macdText}
-BB Position: ${marketContext.bbPosition != null ? (marketContext.bbPosition * 100).toFixed(0) + '%' : 'N/A'}
-
-MULTI-TF ALIGNMENT: ${alignScore ?? 'N/A'}/100 (${marketContext.dominantDirection})
-${marketContext.alignmentDetails ? Object.entries(marketContext.alignmentDetails).map(([tf, d]) => `  ${tf}: ${d.trend} (rsi:${d.rsi})`).join('\n') : ''}
-
-ORDER FLOW:
-- Imbalance: ${marketContext.orderBookImbalance != null ? (marketContext.orderBookImbalance * 100).toFixed(1) + '%' : 'N/A'}
-- CVD: ${marketContext.cvdTrend}
-- Bid wall: $${marketContext.orderBookBidWall ?? 'N/A'}
-- Ask wall: $${marketContext.orderBookAskWall ?? 'N/A'}
-
-VOLATILITAS:
-- ATR: $${marketContext.atr ? marketContext.atr.toFixed(2) : 'N/A'}
-- Regime: ${marketContext.regime}
-- Volume ratio: ${marketContext.volumeRatio ? marketContext.volumeRatio.toFixed(2) + '×' : 'N/A'}
-
-DIVERGENCE & PATTERNS:
-- RSI Divergence: ${marketContext.rsiDivergence}
-- Candle: ${marketContext.candlePattern}
-
-SESSION: ${session} (risk ×${sessionParams.riskMult})
-S/R: Support $${marketContext.support?.toFixed(2) ?? 'N/A'} | Resistance $${marketContext.resistance?.toFixed(2) ?? 'N/A'}
-Liq Zones: Long $${marketContext.nearestLongLiq ?? 'N/A'} | Short $${marketContext.nearestShortLiq ?? 'N/A'}
-
-INSTITUSIONAL:
-- Funding: ${marketContext.fundingRate != null ? (marketContext.fundingRate * 100).toFixed(4) + '%' : 'N/A'}
-- OI change: ${marketContext.oiChangePct != null ? (marketContext.oiChangePct * 100).toFixed(2) + '%' : 'N/A'}
-- Fear&Greed: ${marketContext.fearGreed ?? 'N/A'} (${marketContext.fearGreedLabel})
-
-HTF: 15m ${marketContext.htfTrend} | 1h ${marketContext.htf1hTrend}
-
-KORELASI & EVENT:
-- ETH trend: ${marketContext.ethTrend} | Korelasi BTC-ETH: ${marketContext.correlation != null ? marketContext.correlation.toFixed(2) : 'N/A'}
-- Event risk: ${marketContext.eventRiskLevel} ${marketContext.nextEventName ? `(${marketContext.nextEventName})` : ''}
-
-═══════════ AKUN ═══════════
-Saldo: $${virtualBalance.toFixed(2)} | Posisi: ${activeTrades.length}/${MAX_ACTIVE_TRADES}
-Daily PnL: $${dailyPnl.toFixed(2)} | Fee: $${cumulativeFee.toFixed(2)}
-Winrate: ${winRateText} | Sharpe: ${metrics.sharpe ?? 'N/A'} | PF: ${metrics.profitFactor ?? 'N/A'}
-
-═══════════ AUTO-TUNED PARAMS (bot menyesuaikan diri) ═══════════
-Min alignment: ${dynamicParams.minAlignment}
-Min confidence: ${dynamicParams.minConfidence}
-Kelly fraction: ${dynamicParams.kellyFraction}
-ATR TP mult: ${dynamicParams.atrTpMult}
-
-═══════════ SELF-LEARNING ═══════════
-${reflectionCtx}
-
-═══════════ KEPUTUSAN (SANGAT KETAT) ═══════════
-1. Ada posisi → "HOLD"
-
-2. Entry hanya jika SEMUA kondisi berikut:
-
-   ✅ BUY:
-      - Ensemble consensus = BUY dengan buy score > sell
-      - Feature buy score ≥ 65
-      - Alignment ≥ ${dynamicParams.minAlignment} dominan BULL
-      - HTF 15m UP/FLAT, 1h ≠ DOWN
-      - RSI 30-55, BB position < 0.7
-      - Volume > 0.7×, CVD buying/neutral
-      - Funding < 0.10%, F&G < 75
-      - Event risk ≠ HIGH
-      - Korelasi BTC-ETH tidak ekstrem negatif (kalau ada)
-
-   ✅ SELL:
-      - Ensemble consensus = SELL
-      - Feature sell score ≥ 65
-      - Alignment ≥ ${dynamicParams.minAlignment} dominan BEAR
-      - HTF 15m DOWN/FLAT, 1h ≠ UP
-      - RSI 45-70, BB position > 0.3
-      - Volume > 0.7×, CVD selling/neutral
-      - Funding > -0.05%, F&G > 25
-      - Event risk ≠ HIGH
-
-3. RAJA: kalau ensemble ≠ ${ensemble.consensus} atau align < ${dynamicParams.minAlignment} → HOLD.
-
-4. Confidence 0.0-1.0. Kalau tidak yakin, HOLD.
-
-Balas JSON MURNI:
-{
-  "action": "BUY" | "SELL" | "HOLD" | "CLOSE",
-  "confidence": 0.85,
-  "reasoning": "Alasan (maks 3 kalimat, sebut indikator kunci)"
-}
-`;
-
+    // ============ SMART CACHE CHECK ============
     let agentDecision = { action: 'HOLD', reasoning: 'Menunggu...', confidence: 0 };
     let consensus = 'N/A';
+    let usedCache = false;
+    let geminiBlocked = false;
 
-    const geminiResult = await callGeminiWithConsensus(systemPrompt);
+    const skipGemini = shouldSkipGemini(currentPrice, rsiValue, alignScore, marketContext.regime);
 
-    if (geminiResult.ok) {
-      agentDecision = geminiResult.decision;
-      consensus = geminiResult.consensus || 'N/A';
-      lastGeminiStatus = `ok/${consensus}`;
+    if (skipGemini) {
+      agentDecision = geminiCache.decision;
+      consensus = 'CACHED';
+      geminiSkipCount++;
+      usedCache = true;
+      console.log(`[Cache] Skip Gemini — kondisi hampir sama dengan ${Math.round((Date.now() - geminiCache.timestamp) / 1000)}s lalu`);
     } else {
-      agentDecision = fallbackDecision(currentPrice, rsiValue, macdText, rsiText);
-      lastGeminiStatus = 'fallback';
-      consensus = 'FALLBACK';
+      // Cek quota sebelum panggil
+      const guard = canCallGemini();
+      if (!guard.ok) {
+        geminiBlocked = true;
+        agentDecision = fallbackDecision(currentPrice, rsiValue, macdText, rsiText, ensemble);
+        lastGeminiStatus = 'quota-blocked';
+        consensus = 'QUOTA-FALLBACK';
+        console.log(`[Quota] Skip Gemini: ${guard.reason}`);
+      } else {
+        // Prompt hanya kalau perlu
+        const systemPrompt = `
+Kamu "Orion v5" - AI Trading Agent BTC (${DISPLAY}) INSTITUTIONAL.
+
+═══════ ENSEMBLE (5 strategi) ═══════
+Konsensus: ${ensemble.consensus} (B:${ensemble.buyPct}% S:${ensemble.sellPct}%)
+${Object.entries(ensemble.signals).map(([n, s]) => `- ${n}: ${s.signal} (${Math.round(s.strength * 100)}%)`).join('\n')}
+
+═══════ FEATURE SCORE ═══════
+Buy: ${featureScore.buyScore}/100 | Sell: ${featureScore.sellScore}/100
+
+═══════ PASAR ═══════
+Harga: $${currentPrice.toFixed(2)}
+RSI: ${rsiText} | EMA: ${emaTrend} | MACD: ${macdText}
+BB pos: ${marketContext.bbPosition != null ? (marketContext.bbPosition * 100).toFixed(0) + '%' : 'N/A'}
+Alignment: ${alignScore ?? 'N/A'}/100 (${marketContext.dominantDirection})
+${marketContext.alignmentDetails ? Object.entries(marketContext.alignmentDetails).map(([tf, d]) => `  ${tf}: ${d.trend} (rsi:${d.rsi})`).join('\n') : ''}
+OrderBook: ${marketContext.orderBookImbalance != null ? (marketContext.orderBookImbalance * 100).toFixed(1) + '%' : 'N/A'}
+CVD: ${marketContext.cvdTrend}
+ATR: $${marketContext.atr ? marketContext.atr.toFixed(2) : 'N/A'}
+Regime: ${marketContext.regime}
+Vol ratio: ${marketContext.volumeRatio ? marketContext.volumeRatio.toFixed(2) + '×' : 'N/A'}
+Divergence: ${marketContext.rsiDivergence} | Candle: ${marketContext.candlePattern}
+Session: ${session} (risk ×${sessionParams.riskMult})
+S/R: $${marketContext.support?.toFixed(2) ?? 'N/A'} / $${marketContext.resistance?.toFixed(2) ?? 'N/A'}
+Funding: ${marketContext.fundingRate != null ? (marketContext.fundingRate * 100).toFixed(4) + '%' : 'N/A'}
+OI chg: ${marketContext.oiChangePct != null ? (marketContext.oiChangePct * 100).toFixed(2) + '%' : 'N/A'}
+F&G: ${marketContext.fearGreed ?? 'N/A'} (${marketContext.fearGreedLabel})
+HTF 15m: ${marketContext.htfTrend} | 1h: ${marketContext.htf1hTrend}
+Event risk: ${marketContext.eventRiskLevel}
+
+═══════ AKUN ═══════
+Saldo: $${virtualBalance.toFixed(2)} | Posisi: ${activeTrades.length}/${MAX_ACTIVE_TRADES}
+Daily PnL: $${dailyPnl.toFixed(2)} | Fee: $${cumulativeFee.toFixed(2)}
+Winrate: ${winRateText} | Sharpe: ${metrics.sharpe ?? 'N/A'}
+
+═══════ ATURAN (KETAT) ═══════
+1. Ada posisi → "HOLD"
+2. Entry hanya jika SEMUA terpenuhi:
+   ✅ BUY: ens=BUY + feat≥65 + align≥${dynamicParams.minAlignment} BULL + HTF 15m UP/FLAT + 1h≠DOWN + RSI 30-55 + BB<0.7 + vol>0.7 + CVD buying/neutral + Funding<0.10% + F&G<75 + session OK + event≠HIGH
+   ✅ SELL: ens=SELL + feat≥65 + align≥${dynamicParams.minAlignment} BEAR + HTF 15m DOWN/FLAT + 1h≠UP + RSI 45-70 + BB>0.3 + vol>0.7 + CVD selling/neutral + Funding>-0.05% + F&G>25
+3. RAGU → HOLD
+
+Balas JSON: {"action":"BUY"|"SELL"|"HOLD"|"CLOSE","confidence":0.85,"reasoning":"..."}
+`;
+
+        const geminiResult = await callGeminiSingle(systemPrompt);
+
+        if (geminiResult.ok) {
+          agentDecision = geminiResult.decision;
+          consensus = 'AI';
+          lastGeminiStatus = `ok/${geminiResult.model}`;
+          // Simpan ke cache
+          geminiCache = {
+            decision: agentDecision, price: currentPrice,
+            regime: marketContext.regime,
+            rsiBand: rsiBand(rsiValue),
+            alignmentBand: alignBand(alignScore),
+            timestamp: Date.now()
+          };
+        } else {
+          console.warn('[Gemini] Gagal → fallback');
+          agentDecision = fallbackDecision(currentPrice, rsiValue, macdText, rsiText, ensemble);
+          lastGeminiStatus = 'fallback';
+          consensus = 'FALLBACK';
+        }
+      }
     }
 
-    // Kalibrasi confidence
+    // Kalibrasi
     if (agentDecision.confidence != null && agentDecision.action !== 'HOLD' && agentDecision.action !== 'CLOSE') {
       agentDecision.calibratedConfidence = getCalibratedConfidence(agentDecision.confidence);
     }
 
-    // ============ GUARDS LEVEL 5 ============
-    if (dailyLimitHit) {
-      agentDecision.action = 'HOLD';
-      agentDecision.reasoning = `⚠️ Daily loss limit ${(dailyLossPct * 100).toFixed(2)}%`;
-    }
+    // GUARDS
+    if (dailyLimitHit) { agentDecision.action = 'HOLD'; agentDecision.reasoning = `⚠️ Daily loss ${(dailyLossPct * 100).toFixed(2)}%`; }
     if (!sessionParams.allowTrade && agentDecision.action !== 'HOLD' && agentDecision.action !== 'CLOSE') {
-      agentDecision.action = 'HOLD';
-      agentDecision.reasoning = `⚠️ Session ${session} off-hours`;
+      agentDecision.action = 'HOLD'; agentDecision.reasoning = `⚠️ Session ${session} off`;
     }
     if ((agentDecision.action === 'BUY' || agentDecision.action === 'SELL') && alignScore != null && alignScore < dynamicParams.minAlignment) {
-      agentDecision.action = 'HOLD';
-      agentDecision.reasoning = `⚠️ Align ${alignScore} < ${dynamicParams.minAlignment}`;
+      agentDecision.action = 'HOLD'; agentDecision.reasoning = `⚠️ Align ${alignScore} < ${dynamicParams.minAlignment}`;
     }
     if ((agentDecision.action === 'BUY' || agentDecision.action === 'SELL') && (agentDecision.confidence ?? 0) < dynamicParams.minConfidence) {
-      agentDecision.action = 'HOLD';
-      agentDecision.reasoning = `⚠️ Conf ${((agentDecision.confidence || 0) * 100).toFixed(0)}% < ${dynamicParams.minConfidence * 100}%`;
+      agentDecision.action = 'HOLD'; agentDecision.reasoning = `⚠️ Conf low`;
     }
     if ((agentDecision.action === 'BUY' || agentDecision.action === 'SELL') && marketContext.eventRiskLevel === 'HIGH') {
-      agentDecision.action = 'HOLD';
-      agentDecision.reasoning = `⚠️ Event risk HIGH: ${marketContext.nextEventName}`;
+      agentDecision.action = 'HOLD'; agentDecision.reasoning = `⚠️ Event HIGH`;
     }
 
     // Eksekusi
@@ -1691,7 +1555,6 @@ Balas JSON MURNI:
 
         if (virtualBalance >= totalExposure) {
           const openedTrades = [];
-          // SCALE-IN: buka bertahap
           for (let step = 0; step < SCALE_IN_STEPS; step++) {
             const perStep = Math.ceil(MAX_ACTIVE_TRADES / SCALE_IN_STEPS);
             for (let i = 0; i < perStep; i++) {
@@ -1720,16 +1583,16 @@ Balas JSON MURNI:
           if (openedTrades.length > 0) {
             tradeHistory.unshift({
               time: new Date().toLocaleTimeString('id-ID'),
-              type: `OPEN ${openedTrades.length}x ${agentDecision.action} (${session} | ens ${ensemble.consensus} | align ${alignScore ?? 'N/A'} | feat ${featureScore.buyScore})`,
+              type: `OPEN ${openedTrades.length}x ${agentDecision.action} (${session} | ${consensus})`,
               open: openedTrades[0].entryPrice.toFixed(2), close: '-', pnl: 0, balanceAfter: virtualBalance
             });
             updateMarketMemory({
               price: currentPrice, rsi: rsiValue, ema: ema20Value, macdStatus: macdText,
               decision: agentDecision.action,
-              reasoning: `[${consensus}/${ensemble.consensus}/align ${alignScore}] ${agentDecision.reasoning}`,
+              reasoning: `[${consensus}] ${agentDecision.reasoning}`,
               pnl: 0
             });
-            sendTelegram(`🚀 <b>OPEN ${openedTrades.length}x ${agentDecision.action}</b>\nEntry: $${openedTrades[0].entryPrice.toFixed(2)}\nSession: ${session} | Ensemble: ${ensemble.consensus}\nAlign: ${alignScore ?? 'N/A'} | Feature: ${featureScore.buyScore}\nConfidence: ${(confidence * 100).toFixed(0)}%`);
+            sendTelegram(`🚀 <b>OPEN ${openedTrades.length}x ${agentDecision.action}</b>\nEntry: $${openedTrades[0].entryPrice.toFixed(2)}\n${consensus} | ${session}`);
           }
         } else {
           updateMarketMemory({
@@ -1766,21 +1629,30 @@ Balas JSON MURNI:
       cumulativeTrades, dailyPnl: parseFloat(dailyPnl.toFixed(2)), dailyTrades,
       winRate, metrics,
       streak: { wins: consecutiveWins, losses: consecutiveLosses },
-      geminiStats: { success: geminiSuccessCount, fail: geminiFailCount },
+      geminiStats: {
+        success: geminiSuccessCount, fail: geminiFailCount,
+        skip: geminiSkipCount,
+        dailyRequests: dailyGeminiRequests,
+        dailyLimit: DAILY_REQUEST_LIMIT,
+        hourlyCount: hourlyRequests.length,
+        hourlyLimit: MAX_REQUESTS_PER_HOUR,
+        cooldown: quotaCooldown.active ? {
+          active: true,
+          until: new Date(quotaCooldown.until).toLocaleTimeString('id-ID'),
+          remainingMs: Math.max(0, quotaCooldown.until - Date.now())
+        } : { active: false },
+        cacheAge: geminiCache.decision ? Date.now() - geminiCache.timestamp : null,
+        cacheValid: !!geminiCache.decision && (Date.now() - geminiCache.timestamp) < CACHE_TTL_MS
+      },
       lastCloseEvent,
       currentSignature: signature, signatureWinrate: sigWinrate, bestPatterns,
       dynamicParams,
       ensemble: {
         consensus: ensemble.consensus,
         buyPct: ensemble.buyPct, sellPct: ensemble.sellPct,
-        signals: ensemble.signals,
-        stats: ensembleStats
+        signals: ensemble.signals, stats: ensembleStats
       },
-      featureScore: {
-        buy: featureScore.buyScore,
-        sell: featureScore.sellScore,
-        features: featureScore.features
-      },
+      featureScore: { buy: featureScore.buyScore, sell: featureScore.sellScore, features: featureScore.features },
       confidenceCalibration,
       patternStats: {
         sessionPerformance: patternStats.bySession,
@@ -1828,6 +1700,29 @@ Balas JSON MURNI:
   }
 }
 
+function generateSignature(ctx) {
+  return [ctx.regime, ctx.htfTrend, ctx.session, ctx.rsiDivergence, ctx.candlePattern].join('|');
+}
+function recordPatternOutcome(signature, isWin) {
+  if (!patternStats.bySignature[signature]) patternStats.bySignature[signature] = { wins: 0, losses: 0 };
+  if (isWin) patternStats.bySignature[signature].wins++;
+  else patternStats.bySignature[signature].losses++;
+}
+function getPatternWinrate(signature) {
+  const s = patternStats.bySignature[signature];
+  if (!s) return null;
+  const total = s.wins + s.losses;
+  if (total < 3) return null;
+  return { rate: s.wins / total, wins: s.wins, losses: s.losses, total };
+}
+function getBestPatterns(topN = 3) {
+  return Object.entries(patternStats.bySignature)
+    .filter(([, s]) => (s.wins + s.losses) >= 3)
+    .map(([sig, s]) => ({ sig, winrate: s.wins / (s.wins + s.losses), wins: s.wins, losses: s.losses, total: s.wins + s.losses }))
+    .sort((a, b) => b.winrate - a.winrate)
+    .slice(0, topN);
+}
+
 // ================== ROUTES ==================
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -1840,7 +1735,7 @@ app.get('/api/start-bot', requireAuth, async (req, res) => {
     if (botInterval) clearInterval(botInterval);
     botInterval = setInterval(runAutonomousAgent, LOOP_INTERVAL_MS);
   }
-  res.json({ success: true, message: 'Orion v5 aktif.' });
+  res.json({ success: true, message: 'Orion v5 aktif (hemat kuota).' });
 });
 
 app.get('/api/stop-bot', requireAuth, (req, res) => {
@@ -1880,33 +1775,35 @@ app.get('/api/force-close', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-// BACKTEST endpoint
+// Reset quota cooldown manual
+app.get('/api/reset-quota', requireAuth, (req, res) => {
+  quotaCooldown = { active: false, until: 0, hits: 0 };
+  dailyGeminiRequests = 0;
+  hourlyRequests = [];
+  res.json({ success: true, message: 'Quota cooldown direset.' });
+});
+
 app.get('/api/backtest', requireAuth, async (req, res) => {
   try {
     const interval = req.query.interval || '15m';
     const limit = parseInt(req.query.limit) || 500;
     const klines = await fetchKlines(SYMBOL, interval, limit);
     if (!klines) return res.json({ success: false, message: 'Gagal fetch klines' });
-
     const slMult = parseFloat(req.query.sl) || dynamicParams.atrSlMult;
     const tpMult = parseFloat(req.query.tp) || dynamicParams.atrTpMult;
-
     const result = backtestStrategy(klines, { slMult, tpMult });
     lastBacktest = result ? { ...result, interval, limit, timestamp: new Date().toLocaleTimeString('id-ID') } : null;
-
     res.json({ success: true, result: lastBacktest });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-// Reset dynamic params
 app.get('/api/reset-params', requireAuth, (req, res) => {
   dynamicParams = { atrSlMult: 1.5, atrTpMult: 2.5, minAlignment: 70, minConfidence: 0.65, kellyFraction: 0.25 };
   res.json({ success: true, message: 'Params direset', params: dynamicParams });
 });
 
-// Add event
 app.get('/api/add-event', requireAuth, (req, res) => {
-  const { date, name } = req.query;
+  const { date } = req.query;
   if (!date) return res.json({ success: false, message: 'Butuh date=YYYY-MM-DD' });
   if (!HIGH_IMPACT_EVENTS.includes(date)) HIGH_IMPACT_EVENTS.push(date);
   res.json({ success: true, events: HIGH_IMPACT_EVENTS });
@@ -1917,7 +1814,7 @@ app.get('/api/reset', requireAuth, (req, res) => {
   if (botInterval) { clearInterval(botInterval); botInterval = null; }
   virtualBalance = 10000; activeTrades = []; tradeHistory = []; priceHistory = [];
   marketMemory = []; cycleCount = 0; cumulativeFee = 0; cumulativeTrades = 0;
-  geminiSuccessCount = 0; geminiFailCount = 0; consecutiveFailures = 0;
+  geminiSuccessCount = 0; geminiFailCount = 0; geminiSkipCount = 0; consecutiveFailures = 0;
   lastCloseEvent = null; serverLogs = {};
   dailyStartBalance = 10000; dailyStartDate = new Date().toDateString();
   dailyPnl = 0; dailyTrades = 0;
@@ -1925,11 +1822,12 @@ app.get('/api/reset', requireAuth, (req, res) => {
   peakBalance = 10000; maxDrawdown = 0; allPnls = [];
   patternStats = { bySignature: {}, bySession: { ASIA: { wins: 0, losses: 0 }, LONDON: { wins: 0, losses: 0 }, NY: { wins: 0, losses: 0 } }, byRegime: {} };
   confidenceCalibration = { low: { wins: 0, losses: 0 }, mid: { wins: 0, losses: 0 }, high: { wins: 0, losses: 0 } };
-  ensembleStats = {
-    trend_follower: { wins: 0, losses: 0 }, mean_reverter: { wins: 0, losses: 0 },
-    momentum: { wins: 0, losses: 0 }, breakout: { wins: 0, losses: 0 }, order_flow: { wins: 0, losses: 0 }
-  };
+  ensembleStats = { trend_follower: { wins: 0, losses: 0 }, mean_reverter: { wins: 0, losses: 0 }, momentum: { wins: 0, losses: 0 }, breakout: { wins: 0, losses: 0 }, order_flow: { wins: 0, losses: 0 } };
   dynamicParams = { atrSlMult: 1.5, atrTpMult: 2.5, minAlignment: 70, minConfidence: 0.65, kellyFraction: 0.25 };
+  geminiCache = { decision: null, price: 0, regime: '', rsiBand: '', alignmentBand: '', timestamp: 0 };
+  quotaCooldown = { active: false, until: 0, hits: 0 };
+  dailyGeminiRequests = 0;
+  hourlyRequests = [];
   res.json({ success: true, message: 'State direset.' });
 });
 
@@ -1940,9 +1838,19 @@ app.get('/api/bot-status', (req, res) => {
     state: {
       virtualBalance, activeTradesCount: activeTrades.length,
       isExecutingCycle, consecutiveFailures, geminiStatus: lastGeminiStatus,
-      dynamicParams, geminiStats: { success: geminiSuccessCount, fail: geminiFailCount },
-      ensembleStats, confidenceCalibration,
-      lastBacktest
+      dynamicParams,
+      geminiStats: {
+        success: geminiSuccessCount, fail: geminiFailCount, skip: geminiSkipCount,
+        dailyRequests: dailyGeminiRequests, dailyLimit: DAILY_REQUEST_LIMIT,
+        hourlyCount: hourlyRequests.length, hourlyLimit: MAX_REQUESTS_PER_HOUR,
+        cooldown: quotaCooldown.active ? {
+          active: true,
+          until: new Date(quotaCooldown.until).toLocaleTimeString('id-ID'),
+          remainingMs: Math.max(0, quotaCooldown.until - Date.now()),
+          hits: quotaCooldown.hits
+        } : { active: false }
+      },
+      ensembleStats, confidenceCalibration, lastBacktest
     }
   });
 });
@@ -1954,15 +1862,16 @@ process.on('SIGINT', () => {
 });
 
 app.listen(port, () => {
-  console.log(`═══════════════════════════════════════════════════`);
-  console.log(`  Orion v5 — ADAPTIVE INTELLIGENCE`);
-  console.log(`═══════════════════════════════════════════════════`);
-  console.log(`Loop: ${LOOP_INTERVAL_MS / 1000}s | Live: ${ENABLE_LIVE_BROKER ? '⚠️ AKTIF' : 'simulasi'}`);
-  console.log(`Ensemble: 5 strategies voting`);
-  console.log(`Feature scoring: ML-weighted (10 features)`);
-  console.log(`Self-learning: patterns + confidence calibration + ensemble stats`);
-  console.log(`Auto-tune: params adjust based on 20-trade rolling winrate`);
-  console.log(`Backtest: /api/backtest?interval=15m&limit=500`);
+  console.log(`═══════════════════════════════════════════════`);
+  console.log(`  Orion v5 — QUOTA-FRIENDLY MODE`);
+  console.log(`═══════════════════════════════════════════════`);
+  console.log(`Loop: ${LOOP_INTERVAL_MS / 60000} menit (bukan 3 menit)`);
+  console.log(`Gemini models: ${GEMINI_MODELS_PRIMARY.join(', ')}`);
+  console.log(`Daily request limit: ${DAILY_REQUEST_LIMIT}`);
+  console.log(`Hourly rate limit: ${MAX_REQUESTS_PER_HOUR}`);
+  console.log(`Cache TTL: ${CACHE_TTL_MS / 60000} menit`);
+  console.log(`Cooldown setelah 429: ${COOLDOWN_AFTER_429_MS / 60000} menit`);
+  console.log(`Live broker: ${ENABLE_LIVE_BROKER ? '⚠️ AKTIF' : 'simulasi'}`);
   console.log(`Telegram: ${TELEGRAM_ENABLED ? '✅' : '❌'}`);
-  console.log(`═══════════════════════════════════════════════════`);
+  console.log(`═══════════════════════════════════════════════`);
 });
