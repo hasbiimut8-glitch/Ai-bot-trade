@@ -9,27 +9,25 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // ================== CONFIG ==================
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-if (!OPENROUTER_API_KEY) {
-  console.error("FATAL: OPENROUTER_API_KEY tidak diset.");
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+if (!GROQ_API_KEY) {
+  console.error("FATAL: GROQ_API_KEY tidak diset.");
   process.exit(1);
 }
 
-const OPENROUTER_API_BASE = 'https://openrouter.ai/api/v1';
-const APP_URL = process.env.APP_URL || 'https://railway.app';
-const APP_TITLE = 'Orion AI Trading Bot';
+const GROQ_API_BASE = 'https://api.groq.com/openai/v1';
 
 const SYMBOL = 'BTCUSDT';
 const ETH_SYMBOL = 'ETHUSDT';
 const DISPLAY = 'BTC/USDT';
 
-// 🔥 Model ID VALID per Okt 2026 — sudah diverifikasi tersedia di OpenRouter
-const OPENROUTER_MODELS_PRIMARY = [
-  'google/gemini-2.0-flash-exp:free',
+// 🔥 Model Groq — cepat, gratis, API key tidak expire
+const GROQ_MODELS_PRIMARY = [
+  'llama-3.3-70b-versatile',
 ];
-const OPENROUTER_MODELS_FALLBACK = [
-  'openrouter/free',
-  'meta-llama/llama-3.1-70b-instruct:free',
+const GROQ_MODELS_FALLBACK = [
+  'llama-3.1-8b-instant',
+  'mixtral-8x7b-32768',
 ];
 
 const ENABLE_LIVE_BROKER = process.env.ENABLE_LIVE_BROKER === 'true';
@@ -48,7 +46,7 @@ if (ENABLE_LIVE_BROKER && (!META_API_TOKEN || !META_ACCOUNT_ID)) {
 }
 
 // ================== STRATEGI ==================
-const LOOP_INTERVAL_MS = 600000;
+const LOOP_INTERVAL_MS = 600000;   // 10 menit
 
 const MAX_ACTIVE_TRADES = 4;
 const MAX_PRICE_HISTORY = 100;
@@ -1156,7 +1154,7 @@ function handle429() {
   quotaCooldown.active = true;
   quotaCooldown.until = Date.now() + duration;
   console.warn(`[Quota] Kena 429! Cooldown ${duration / 60000} menit (hit #${quotaCooldown.hits})`);
-  sendTelegram(`⚠️ <b>OpenRouter quota habis</b>\nCooldown ${duration / 60000} menit.`);
+  sendTelegram(`⚠️ <b>Groq quota habis</b>\nCooldown ${duration / 60000} menit.`);
 }
 
 function rsiBand(rsi) {
@@ -1184,32 +1182,28 @@ function shouldSkipGemini(currentPrice, rsiValue, alignmentScore, regime) {
   return true;
 }
 
-// ================== OPENROUTER CALL ==================
-async function callOpenRouterModel(modelName, systemPrompt, attempts = 1) {
+// ================== GROQ CALL ==================
+async function callGroqModel(modelName, systemPrompt, attempts = 1) {
   const guard = canCallGemini();
   if (!guard.ok) {
-    console.warn(`[OpenRouter] Skip: ${guard.reason}`);
+    console.warn(`[Groq] Skip: ${guard.reason}`);
     return { ok: false, error: new Error(guard.reason), quotaBlocked: true };
   }
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
       trackGeminiCall();
-      const url = `${OPENROUTER_API_BASE}/chat/completions`;
+      const url = `${GROQ_API_BASE}/chat/completions`;
 
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
           'Content-Type': 'application/json',
-          'HTTP-Referer': APP_URL,
-          'X-OpenRouter-Title': APP_TITLE,
         },
         body: JSON.stringify({
           model: modelName,
-          messages: [
-            { role: 'user', content: systemPrompt }
-          ],
+          messages: [{ role: 'user', content: systemPrompt }],
           response_format: { type: 'json_object' },
           temperature: 0.4,
           max_tokens: 500,
@@ -1220,7 +1214,7 @@ async function callOpenRouterModel(modelName, systemPrompt, attempts = 1) {
       if (!response.ok) {
         const errText = await response.text();
         const errMsg = `HTTP ${response.status}: ${errText.slice(0, 250)}`;
-        console.warn(`[OpenRouter][${modelName}][a${attempt}] ${errMsg}`);
+        console.warn(`[Groq][${modelName}][a${attempt}] ${errMsg}`);
 
         if (response.status === 429) {
           handle429();
@@ -1229,21 +1223,14 @@ async function callOpenRouterModel(modelName, systemPrompt, attempts = 1) {
         if (response.status === 401 || response.status === 403) {
           return { ok: false, error: new Error(errMsg), authError: true };
         }
-        if (response.status === 503 || response.status === 500 || response.status === 502) {
+        if (response.status >= 500 && response.status < 600) {
           if (attempt < attempts) {
             await new Promise(r => setTimeout(r, 3000));
             continue;
           }
           return { ok: false, error: new Error(errMsg) };
         }
-        if (response.status === 404) {
-          return { ok: false, error: new Error(errMsg), modelUnavailable: true };
-        }
-        // 400 = invalid model ID → sinyal ke caller untuk coba model lain
-        if (response.status === 400) {
-          return { ok: false, error: new Error(errMsg), invalidModel: true };
-        }
-        return { ok: false, error: new Error(errMsg) };
+        return { ok: false, error: new Error(errMsg), modelUnavailable: true };
       }
 
       const data = await response.json();
@@ -1257,13 +1244,13 @@ async function callOpenRouterModel(modelName, systemPrompt, attempts = 1) {
             return { ok: true, decision: parsed };
           }
         } catch (parseErr) {
-          console.warn(`[OpenRouter][${modelName}] JSON parse gagal: ${cleaned.slice(0, 150)}`);
+          console.warn(`[Groq][${modelName}] JSON parse gagal: ${cleaned.slice(0, 150)}`);
           return { ok: false, error: new Error('JSON parse gagal') };
         }
       }
       return { ok: false, error: new Error('Respons kosong') };
     } catch (e) {
-      console.warn(`[OpenRouter][${modelName}][a${attempt}] ${e.message}`);
+      console.warn(`[Groq][${modelName}][a${attempt}] ${e.message}`);
       if (attempt >= attempts) return { ok: false, error: e };
       await new Promise(r => setTimeout(r, 2000));
     }
@@ -1272,17 +1259,15 @@ async function callOpenRouterModel(modelName, systemPrompt, attempts = 1) {
 }
 
 async function callAI(systemPrompt) {
-  // Coba model utama
-  for (const model of OPENROUTER_MODELS_PRIMARY) {
-    const res = await callOpenRouterModel(model, systemPrompt, 1);
+  for (const model of GROQ_MODELS_PRIMARY) {
+    const res = await callGroqModel(model, systemPrompt, 1);
     if (res.ok) { geminiSuccessCount++; return { ok: true, decision: res.decision, model }; }
     if (res.quotaExceeded || res.quotaBlocked) { geminiFailCount++; return { ok: false, quotaExceeded: true }; }
     if (res.authError) { geminiFailCount++; return { ok: false, authError: true }; }
   }
 
-  // Coba fallback models
-  for (const model of OPENROUTER_MODELS_FALLBACK) {
-    const res = await callOpenRouterModel(model, systemPrompt, 1);
+  for (const model of GROQ_MODELS_FALLBACK) {
+    const res = await callGroqModel(model, systemPrompt, 1);
     if (res.ok) { geminiSuccessCount++; return { ok: true, decision: res.decision, model }; }
     if (res.quotaExceeded || res.quotaBlocked) { geminiFailCount++; return { ok: false, quotaExceeded: true }; }
     if (res.authError) { geminiFailCount++; return { ok: false, authError: true }; }
@@ -1407,7 +1392,6 @@ async function runAutonomousAgent() {
       ? `5 trade: ${recentClosed.map(t => `$${t.pnl.toFixed(2)}`).join(', ')}\nStreak: ${consecutiveWins}W/${consecutiveLosses}L`
       : '(Sesi awal)';
 
-    // SMART CACHE
     let agentDecision = { action: 'HOLD', reasoning: 'Menunggu...', confidence: 0 };
     let consensus = 'N/A';
 
@@ -1480,7 +1464,7 @@ Balas HANYA JSON: {"action":"BUY"|"SELL"|"HOLD"|"CLOSE","confidence":0.85,"reaso
             timestamp: Date.now()
           };
         } else {
-          console.warn('[OpenRouter] Gagal → fallback');
+          console.warn('[Groq] Gagal → fallback');
           agentDecision = fallbackDecision(currentPrice, rsiValue, macdText, rsiText, ensemble);
           lastGeminiStatus = 'fallback';
           consensus = 'FALLBACK';
@@ -1740,7 +1724,7 @@ app.get('/api/start-bot', requireAuth, async (req, res) => {
     if (botInterval) clearInterval(botInterval);
     botInterval = setInterval(runAutonomousAgent, LOOP_INTERVAL_MS);
   }
-  res.json({ success: true, message: 'Orion v5 aktif (OpenRouter).' });
+  res.json({ success: true, message: 'Orion v5 aktif (Groq).' });
 });
 
 app.get('/api/stop-bot', requireAuth, (req, res) => {
@@ -1787,31 +1771,16 @@ app.get('/api/reset-quota', requireAuth, (req, res) => {
   res.json({ success: true, message: 'Quota cooldown direset.' });
 });
 
-// List model OpenRouter yang valid (proxy ke API)
-app.get('/api/list-models', requireAuth, async (req, res) => {
-  try {
-    const r = await fetch(`${OPENROUTER_API_BASE}/models`, { signal: AbortSignal.timeout(10000) });
-    if (!r.ok) return res.status(500).json({ success: false, error: `HTTP ${r.status}` });
-    const data = await r.json();
-    const freeModels = (data.data || []).filter(m => m.id.includes(':free')).map(m => ({
-      id: m.id, name: m.name, context: m.context_length
-    }));
-    res.json({ success: true, count: freeModels.length, models: freeModels.slice(0, 30) });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
-});
-
-// Test endpoint OpenRouter
+// Test endpoint Groq
 app.get('/api/test-ai', requireAuth, async (req, res) => {
-  const modelToTest = req.query.model || OPENROUTER_MODELS_PRIMARY[0];
+  const modelToTest = req.query.model || GROQ_MODELS_PRIMARY[0];
   try {
-    const url = `${OPENROUTER_API_BASE}/chat/completions`;
+    const url = `${GROQ_API_BASE}/chat/completions`;
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': APP_URL,
-        'X-OpenRouter-Title': APP_TITLE,
       },
       body: JSON.stringify({
         model: modelToTest,
@@ -1826,6 +1795,20 @@ app.get('/api/test-ai', requireAuth, async (req, res) => {
   } catch (e) {
     res.status(500).json({ success: false, model: modelToTest, error: e.message });
   }
+});
+
+// List model Groq yang tersedia
+app.get('/api/list-models', requireAuth, async (req, res) => {
+  try {
+    const r = await fetch(`${GROQ_API_BASE}/models`, {
+      headers: { 'Authorization': `Bearer ${GROQ_API_KEY}` },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!r.ok) return res.status(500).json({ success: false, error: `HTTP ${r.status}` });
+    const data = await r.json();
+    const models = (data.data || []).map(m => ({ id: m.id, context: m.context_window }));
+    res.json({ success: true, count: models.length, models });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.get('/api/backtest', requireAuth, async (req, res) => {
@@ -1884,9 +1867,9 @@ app.get('/api/bot-status', (req, res) => {
       virtualBalance, activeTradesCount: activeTrades.length,
       isExecutingCycle, consecutiveFailures, geminiStatus: lastGeminiStatus,
       dynamicParams,
-      openrouterModels: {
-        primary: OPENROUTER_MODELS_PRIMARY,
-        fallback: OPENROUTER_MODELS_FALLBACK
+      groqModels: {
+        primary: GROQ_MODELS_PRIMARY,
+        fallback: GROQ_MODELS_FALLBACK
       },
       geminiStats: {
         success: geminiSuccessCount, fail: geminiFailCount, skip: geminiSkipCount,
@@ -1912,12 +1895,12 @@ process.on('SIGINT', () => {
 
 app.listen(port, () => {
   console.log(`═══════════════════════════════════════════════`);
-  console.log(`  Orion v5 — OPENROUTER MODE`);
+  console.log(`  Orion v5 — GROQ MODE`);
   console.log(`═══════════════════════════════════════════════`);
   console.log(`Loop: ${LOOP_INTERVAL_MS / 60000} menit`);
-  console.log(`OpenRouter: ${OPENROUTER_API_BASE}`);
-  console.log(`Model utama: ${OPENROUTER_MODELS_PRIMARY.join(', ')}`);
-  console.log(`Fallback: ${OPENROUTER_MODELS_FALLBACK.join(', ')}`);
+  console.log(`Groq endpoint: ${GROQ_API_BASE}`);
+  console.log(`Model utama: ${GROQ_MODELS_PRIMARY.join(', ')}`);
+  console.log(`Fallback: ${GROQ_MODELS_FALLBACK.join(', ')}`);
   console.log(`Daily request limit: ${DAILY_REQUEST_LIMIT}`);
   console.log(`Cache TTL: ${CACHE_TTL_MS / 60000} menit`);
   console.log(`Live broker: ${ENABLE_LIVE_BROKER ? '⚠️ AKTIF' : 'simulasi'}`);
