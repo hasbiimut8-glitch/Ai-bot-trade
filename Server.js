@@ -23,13 +23,13 @@ const SYMBOL = 'BTCUSDT';
 const ETH_SYMBOL = 'ETHUSDT';
 const DISPLAY = 'BTC/USDT';
 
-// 🔥 Model OpenRouter — pakai versi gratis dulu
+// 🔥 Model ID VALID per Okt 2026 — sudah diverifikasi tersedia di OpenRouter
 const OPENROUTER_MODELS_PRIMARY = [
-  'google/gemini-2.5-flash-preview',
+  'google/gemini-2.0-flash-exp:free',
 ];
 const OPENROUTER_MODELS_FALLBACK = [
-  'google/gemini-2.0-flash-exp:free',
-  'meta-llama/llama-3.3-70b-instruct:free',
+  'openrouter/free',
+  'meta-llama/llama-3.1-70b-instruct:free',
 ];
 
 const ENABLE_LIVE_BROKER = process.env.ENABLE_LIVE_BROKER === 'true';
@@ -1239,6 +1239,10 @@ async function callOpenRouterModel(modelName, systemPrompt, attempts = 1) {
         if (response.status === 404) {
           return { ok: false, error: new Error(errMsg), modelUnavailable: true };
         }
+        // 400 = invalid model ID → sinyal ke caller untuk coba model lain
+        if (response.status === 400) {
+          return { ok: false, error: new Error(errMsg), invalidModel: true };
+        }
         return { ok: false, error: new Error(errMsg) };
       }
 
@@ -1273,6 +1277,7 @@ async function callAI(systemPrompt) {
     const res = await callOpenRouterModel(model, systemPrompt, 1);
     if (res.ok) { geminiSuccessCount++; return { ok: true, decision: res.decision, model }; }
     if (res.quotaExceeded || res.quotaBlocked) { geminiFailCount++; return { ok: false, quotaExceeded: true }; }
+    if (res.authError) { geminiFailCount++; return { ok: false, authError: true }; }
   }
 
   // Coba fallback models
@@ -1280,6 +1285,7 @@ async function callAI(systemPrompt) {
     const res = await callOpenRouterModel(model, systemPrompt, 1);
     if (res.ok) { geminiSuccessCount++; return { ok: true, decision: res.decision, model }; }
     if (res.quotaExceeded || res.quotaBlocked) { geminiFailCount++; return { ok: false, quotaExceeded: true }; }
+    if (res.authError) { geminiFailCount++; return { ok: false, authError: true }; }
   }
 
   geminiFailCount++;
@@ -1781,8 +1787,22 @@ app.get('/api/reset-quota', requireAuth, (req, res) => {
   res.json({ success: true, message: 'Quota cooldown direset.' });
 });
 
-// 🔥 Test endpoint OpenRouter
+// List model OpenRouter yang valid (proxy ke API)
+app.get('/api/list-models', requireAuth, async (req, res) => {
+  try {
+    const r = await fetch(`${OPENROUTER_API_BASE}/models`, { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) return res.status(500).json({ success: false, error: `HTTP ${r.status}` });
+    const data = await r.json();
+    const freeModels = (data.data || []).filter(m => m.id.includes(':free')).map(m => ({
+      id: m.id, name: m.name, context: m.context_length
+    }));
+    res.json({ success: true, count: freeModels.length, models: freeModels.slice(0, 30) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// Test endpoint OpenRouter
 app.get('/api/test-ai', requireAuth, async (req, res) => {
+  const modelToTest = req.query.model || OPENROUTER_MODELS_PRIMARY[0];
   try {
     const url = `${OPENROUTER_API_BASE}/chat/completions`;
     const response = await fetch(url, {
@@ -1794,7 +1814,7 @@ app.get('/api/test-ai', requireAuth, async (req, res) => {
         'X-OpenRouter-Title': APP_TITLE,
       },
       body: JSON.stringify({
-        model: OPENROUTER_MODELS_PRIMARY[0],
+        model: modelToTest,
         messages: [{ role: 'user', content: 'Balas JSON: {"action":"HOLD","confidence":0.5,"reasoning":"test ok"}' }],
         response_format: { type: 'json_object' },
       }),
@@ -1802,9 +1822,9 @@ app.get('/api/test-ai', requireAuth, async (req, res) => {
     });
     const status = response.status;
     const text = await response.text();
-    res.json({ success: response.ok, status, response: text.slice(0, 600) });
+    res.json({ success: response.ok, model: modelToTest, status, response: text.slice(0, 600) });
   } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
+    res.status(500).json({ success: false, model: modelToTest, error: e.message });
   }
 });
 
@@ -1864,6 +1884,10 @@ app.get('/api/bot-status', (req, res) => {
       virtualBalance, activeTradesCount: activeTrades.length,
       isExecutingCycle, consecutiveFailures, geminiStatus: lastGeminiStatus,
       dynamicParams,
+      openrouterModels: {
+        primary: OPENROUTER_MODELS_PRIMARY,
+        fallback: OPENROUTER_MODELS_FALLBACK
+      },
       geminiStats: {
         success: geminiSuccessCount, fail: geminiFailCount, skip: geminiSkipCount,
         dailyRequests: dailyGeminiRequests, dailyLimit: DAILY_REQUEST_LIMIT,
@@ -1898,5 +1922,7 @@ app.listen(port, () => {
   console.log(`Cache TTL: ${CACHE_TTL_MS / 60000} menit`);
   console.log(`Live broker: ${ENABLE_LIVE_BROKER ? '⚠️ AKTIF' : 'simulasi'}`);
   console.log(`Telegram: ${TELEGRAM_ENABLED ? '✅' : '❌'}`);
+  console.log(`Test endpoint: /api/test-ai?key=<KEY>`);
+  console.log(`List models: /api/list-models?key=<KEY>`);
   console.log(`═══════════════════════════════════════════════`);
 });
