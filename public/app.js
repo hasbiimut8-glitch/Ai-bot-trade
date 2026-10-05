@@ -6,6 +6,8 @@ let tradingChart = null;
 let lastFetchOk = true;
 let lastSeenCloseTs = 0;
 let currentTab = 'trading';
+let consecutiveFetchFails = 0;
+const MAX_SILENT_FAILS = 3;
 
 // ==================== UTILITIES ====================
 function fmtUsd(n, decimals = 2) {
@@ -47,7 +49,6 @@ function initTabs() {
 function switchTab(tab) {
   currentTab = tab;
 
-  // Tab buttons (top)
   document.querySelectorAll('.tab-btn').forEach(b => {
     if (b.dataset.tab === tab) {
       b.classList.add('tab-active', 'text-white');
@@ -58,18 +59,15 @@ function switchTab(tab) {
     }
   });
 
-  // Nav buttons (bottom)
   document.querySelectorAll('.nav-btn').forEach(b => {
     if (b.dataset.tab === tab) b.classList.add('nav-btn-active');
     else b.classList.remove('nav-btn-active');
   });
 
-  // Content
   document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
   const el = document.getElementById(`tab-${tab}`);
   if (el) el.classList.remove('hidden');
 
-  // Redraw chart when returning to trading
   if (tab === 'trading' && tradingChart) {
     setTimeout(() => tradingChart.resize(), 50);
   }
@@ -216,30 +214,55 @@ function setBotUIState(running) {
     }
     if (liveIndicator) liveIndicator.innerText = 'Standby';
     if (chartStatus) { chartStatus.innerText = 'Standby'; chartStatus.className = 'text-gray-500'; }
-    document.getElementById('botUptime').innerText = '0j 0m';
+    const uptimeEl = document.getElementById('botUptime');
+    if (uptimeEl) uptimeEl.innerText = '0j 0m';
   }
 }
 
-// ==================== SYNC ====================
+// ==================== SYNC (DENGAN TIMEOUT + SMART TOAST) ====================
 async function syncWithServer() {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12000);
+
   try {
-    const res = await fetch('/api/bot-status');
+    const res = await fetch('/api/bot-status', {
+      signal: controller.signal,
+      cache: 'no-store'
+    });
+    clearTimeout(timeoutId);
+
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
     const json = await res.json();
+
+    // Recovery: kalau sebelumnya gagal berkali-kali dan sekarang berhasil
+    if (!lastFetchOk && consecutiveFetchFails >= MAX_SILENT_FAILS) {
+      showToast('Koneksi pulih', 'success');
+    }
+    consecutiveFetchFails = 0;
+    lastFetchOk = true;
+
     if (json.running !== isRunning) setBotUIState(json.running);
-    if (!lastFetchOk) { lastFetchOk = true; showToast('Koneksi pulih', 'success'); }
     if (json.data) renderData(json.data);
   } catch (err) {
-    if (lastFetchOk) { lastFetchOk = false; showToast('Koneksi ke server gagal'); }
-    console.warn('Sync error:', err);
+    clearTimeout(timeoutId);
+    consecutiveFetchFails++;
+
+    // Toast hanya muncul setelah 3x gagal berturut-turut
+    if (consecutiveFetchFails === MAX_SILENT_FAILS) {
+      lastFetchOk = false;
+      showToast(`Server tidak merespon (${consecutiveFetchFails}x)`);
+    }
+    console.warn(`Sync error (${consecutiveFetchFails}):`, err.message);
   }
 }
 
 // ==================== MAIN RENDER ====================
 function renderData(d) {
-  // === Price & Chart ===
+  // Price & Chart
   if (d.price) {
-    document.getElementById('crypto-price').innerText = fmtUsd(parseFloat(d.price));
+    const priceEl = document.getElementById('crypto-price');
+    if (priceEl) priceEl.innerText = fmtUsd(parseFloat(d.price));
     if (isRunning) updateLiveChart(d.price);
   }
 
@@ -251,10 +274,13 @@ function renderData(d) {
     changeEl.className = `text-xs block font-semibold ${c >= 0 ? 'text-emerald-400' : 'text-red-400'}`;
   }
 
-  // === Account ===
+  // Account
   const balance = Number(d.balance) || 10000;
-  document.getElementById('balance-display').innerText = fmtUsd(balance, 2);
-  if (d.dynamicLot) document.getElementById('dynamic-lot').innerText = d.dynamicLot;
+  const balanceDisplay = document.getElementById('balance-display');
+  if (balanceDisplay) balanceDisplay.innerText = fmtUsd(balance, 2);
+
+  const lotEl = document.getElementById('dynamic-lot');
+  if (lotEl && d.dynamicLot) lotEl.innerText = d.dynamicLot;
 
   const totalProfit = balance - 10000;
   const profitPct = ((totalProfit / 10000) * 100).toFixed(2);
@@ -279,7 +305,8 @@ function renderData(d) {
     floatEl.className = `text-base font-bold ${pctColor(unrealized)}`;
   }
 
-  document.getElementById('cycleCountText').innerText = `Siklus: ${d.cycleCount ?? 0}`;
+  const cycleEl = document.getElementById('cycleCountText');
+  if (cycleEl) cycleEl.innerText = `Siklus: ${d.cycleCount ?? 0}`;
 
   // Active position indicator
   const posIndicator = document.getElementById('activePosIndicator');
@@ -289,7 +316,7 @@ function renderData(d) {
     posIndicator.className = `badge-pill ${activeCount > 0 ? (unrealized >= 0 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 'text-red-400 bg-red-500/10 border-red-500/20') : ''}`;
   }
 
-  // === Indicators ===
+  // Indicators
   if (d.indicators) {
     const rsiEl = document.getElementById('ind-rsi');
     const emaEl = document.getElementById('ind-ema');
@@ -302,6 +329,7 @@ function renderData(d) {
       const s = d.indicators.macdStatus || '';
       if (s.includes('GOLDEN')) { macdEl.innerText = 'GOLDEN ⬆'; macdEl.className = 'text-[10px] font-bold text-emerald-400 truncate block'; }
       else if (s.includes('DEATH')) { macdEl.innerText = 'DEATH ⬇'; macdEl.className = 'text-[10px] font-bold text-red-400 truncate block'; }
+      else if (s.includes('Belum')) { macdEl.innerText = 'WARMUP'; macdEl.className = 'text-[10px] font-bold text-gray-400 truncate block'; }
       else { macdEl.innerText = 'NEUTRAL'; macdEl.className = 'text-[10px] font-bold text-indigo-400 truncate block'; }
     }
 
@@ -313,7 +341,7 @@ function renderData(d) {
     }
   }
 
-  // === Confidence + Consensus ===
+  // Confidence
   const confBadge = document.getElementById('confidenceBadge');
   if (confBadge) {
     if (d.confidence != null) {
@@ -330,41 +358,27 @@ function renderData(d) {
     }
   }
 
-  // AI analysis text
+  // AI analysis
   const aiText = document.getElementById('ai-status-text');
   if (aiText && d.analysis) aiText.innerText = d.analysis;
 
-  // === Trades & History ===
+  // Trades & History
   renderActiveTrades(d.activeTrades, d.price);
   renderHistoryTable(d.tradeHistory);
   renderMarketMemory(d.marketMemory);
 
-  // === LEVEL 5: Ensemble ===
+  // Level 5
   renderEnsemble(d.ensemble);
-
-  // === LEVEL 5: Feature Score ===
   renderFeatureScore(d.featureScore);
-
-  // === LEVEL 5: Market Context ===
   renderMarketContext(d.marketContext, d.indicators);
-
-  // === LEVEL 5: Dynamic Params ===
   renderDynamicParams(d.dynamicParams);
-
-  // === LEVEL 5: Calibration ===
   renderCalibration(d.confidenceCalibration);
-
-  // === LEVEL 5: Patterns ===
   renderBestPatterns(d.bestPatterns, d.patternStats);
-
-  // === LEVEL 5: Metrics ===
   renderMetrics(d.metrics, d.streak, d.winRate);
 
-  // === LEVEL 5: Ensemble stats ===
-  renderEnsembleStats(d.ensemble);
-
   // Last update
-  if (d.timestamp) document.getElementById('lastUpdate').innerText = d.timestamp;
+  const lu = document.getElementById('lastUpdate');
+  if (lu && d.timestamp) lu.innerText = d.timestamp;
 
   // Emotion
   checkCloseEvent(d);
@@ -382,10 +396,11 @@ function renderEnsemble(ens) {
     else consEl.className = 'text-[10px] font-bold bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full border border-gray-700';
   }
 
-  document.getElementById('ensembleBuyPct').innerText = `${ens.buyPct ?? 0}%`;
-  document.getElementById('ensembleSellPct').innerText = `${ens.sellPct ?? 0}%`;
+  const buyPctEl = document.getElementById('ensembleBuyPct');
+  const sellPctEl = document.getElementById('ensembleSellPct');
+  if (buyPctEl) buyPctEl.innerText = `${ens.buyPct ?? 0}%`;
+  if (sellPctEl) sellPctEl.innerText = `${ens.sellPct ?? 0}%`;
 
-  // Signals list
   const sigList = document.getElementById('ensembleSignals');
   if (!sigList || !ens.signals) return;
 
@@ -409,7 +424,6 @@ function renderEnsemble(ens) {
     `;
   }).join('');
 
-  // Stats (untuk tab Analytics)
   const statsList = document.getElementById('ensembleStatsList');
   if (statsList && ens.stats) {
     statsList.innerHTML = Object.entries(ens.stats).map(([name, s]) => {
@@ -436,12 +450,15 @@ function renderFeatureScore(fs) {
   const buyScore = fs.buy ?? 0;
   const sellScore = fs.sell ?? 0;
 
-  document.getElementById('featureBuyScore').innerText = `${buyScore}/100`;
-  document.getElementById('featureSellScore').innerText = `${sellScore}/100`;
-  document.getElementById('featureBuyBar').style.width = `${buyScore}%`;
-  document.getElementById('featureSellBar').style.width = `${sellScore}%`;
+  const bEl = document.getElementById('featureBuyScore');
+  const sEl = document.getElementById('featureSellScore');
+  const bBar = document.getElementById('featureBuyBar');
+  const sBar = document.getElementById('featureSellBar');
+  if (bEl) bEl.innerText = `${buyScore}/100`;
+  if (sEl) sEl.innerText = `${sellScore}/100`;
+  if (bBar) bBar.style.width = `${buyScore}%`;
+  if (sBar) sBar.style.width = `${sellScore}%`;
 
-  // Details
   const details = document.getElementById('featureDetails');
   if (details && fs.features) {
     const entries = Object.entries(fs.features);
@@ -463,7 +480,6 @@ function renderFeatureScore(fs) {
 function renderMarketContext(mc, ind) {
   if (!mc) return;
 
-  // Alignment
   const alignEl = document.getElementById('alignmentScore');
   if (alignEl) {
     const score = mc.alignmentScore ?? 0;
@@ -473,7 +489,6 @@ function renderMarketContext(mc, ind) {
     else alignEl.className = 'text-[10px] font-bold bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full border border-gray-700';
   }
 
-  // Alignment details
   const aDetails = document.getElementById('alignmentDetails');
   if (aDetails && mc.alignmentDetails) {
     aDetails.innerHTML = Object.entries(mc.alignmentDetails).map(([tf, d]) => {
@@ -492,7 +507,6 @@ function renderMarketContext(mc, ind) {
     }).join('');
   }
 
-  // Order Flow
   const obEl = document.getElementById('obImbalance');
   if (obEl) {
     const v = mc.orderBookImbalance;
@@ -506,96 +520,111 @@ function renderMarketContext(mc, ind) {
     cvdEl.className = `text-xs font-bold ${mc.cvdTrend === 'buying' ? 'text-emerald-400' : mc.cvdTrend === 'selling' ? 'text-red-400' : 'text-white'}`;
   }
 
-  if (document.getElementById('bidWall')) document.getElementById('bidWall').innerText = mc.orderBookBidWall ? fmtUsd(mc.orderBookBidWall) : '—';
-  if (document.getElementById('askWall')) document.getElementById('askWall').innerText = mc.orderBookAskWall ? fmtUsd(mc.orderBookAskWall) : '—';
+  const bwEl = document.getElementById('bidWall');
+  const awEl = document.getElementById('askWall');
+  if (bwEl) bwEl.innerText = mc.orderBookBidWall ? fmtUsd(mc.orderBookBidWall) : '—';
+  if (awEl) awEl.innerText = mc.orderBookAskWall ? fmtUsd(mc.orderBookAskWall) : '—';
 
-  // Session
-  if (document.getElementById('currentSession')) {
+  const sessEl = document.getElementById('currentSession');
+  if (sessEl) {
     const s = mc.session || '—';
-    const el = document.getElementById('currentSession');
-    el.innerText = s.replace(/_/g, ' ');
+    sessEl.innerText = s.replace(/_/g, ' ');
     const isGood = s === 'LONDON_NY_OVERLAP' || s === 'LONDON' || s === 'NY';
-    el.className = `text-xs font-bold ${isGood ? 'text-emerald-400' : s === 'ASIA' ? 'text-amber-400' : 'text-red-400'}`;
-  }
-  if (document.getElementById('sessionRiskMult') && mc.sessionParams) {
-    document.getElementById('sessionRiskMult').innerText = `×${mc.sessionParams.riskMult}`;
+    sessEl.className = `text-xs font-bold ${isGood ? 'text-emerald-400' : s === 'ASIA' ? 'text-amber-400' : 'text-red-400'}`;
   }
 
-  if (document.getElementById('eventRisk')) {
+  const riskEl = document.getElementById('sessionRiskMult');
+  if (riskEl && mc.sessionParams) riskEl.innerText = `×${mc.sessionParams.riskMult}`;
+
+  const evEl = document.getElementById('eventRisk');
+  if (evEl) {
     const er = mc.eventRiskLevel || 'LOW';
-    const el = document.getElementById('eventRisk');
-    el.innerText = er;
-    el.className = `text-xs font-bold ${er === 'HIGH' ? 'text-red-400' : er === 'MEDIUM' ? 'text-amber-400' : 'text-emerald-400'}`;
-  }
-  if (document.getElementById('nextEvent')) {
-    document.getElementById('nextEvent').innerText = mc.nextEventName || 'Tidak ada';
+    evEl.innerText = er;
+    evEl.className = `text-xs font-bold ${er === 'HIGH' ? 'text-red-400' : er === 'MEDIUM' ? 'text-amber-400' : 'text-emerald-400'}`;
   }
 
-  // Institutional
-  if (document.getElementById('fundingRate')) {
+  const neEl = document.getElementById('nextEvent');
+  if (neEl) neEl.innerText = mc.nextEventName || 'Tidak ada';
+
+  const frEl = document.getElementById('fundingRate');
+  if (frEl) {
     const fr = mc.fundingRate;
-    document.getElementById('fundingRate').innerText = fr != null ? `${(fr * 100).toFixed(4)}%` : '—';
-  }
-  if (document.getElementById('oiChange')) {
-    const oi = mc.oiChangePct;
-    const el = document.getElementById('oiChange');
-    el.innerText = oi != null ? `${(oi * 100).toFixed(2)}%` : '—';
-    el.className = `text-xs font-bold ${oi > 0 ? 'text-emerald-400' : oi < 0 ? 'text-red-400' : 'text-white'}`;
-  }
-  if (document.getElementById('fearGreed')) {
-    document.getElementById('fearGreed').innerText = mc.fearGreed != null ? `${mc.fearGreed} (${mc.fearGreedLabel})` : '—';
-  }
-  if (document.getElementById('correlation')) {
-    const c = mc.correlation;
-    document.getElementById('correlation').innerText = c != null ? c.toFixed(2) : '—';
-  }
-  if (document.getElementById('atrVal')) {
-    document.getElementById('atrVal').innerText = mc.atr ? `$${mc.atr.toFixed(2)}` : '—';
-  }
-  if (document.getElementById('regime')) {
-    document.getElementById('regime').innerText = mc.regime || '—';
+    frEl.innerText = fr != null ? `${(fr * 100).toFixed(4)}%` : '—';
   }
 
-  // S/R
-  if (document.getElementById('support')) document.getElementById('support').innerText = mc.support ? fmtUsd(mc.support) : '—';
-  if (document.getElementById('resistance')) document.getElementById('resistance').innerText = mc.resistance ? fmtUsd(mc.resistance) : '—';
-  if (document.getElementById('rsiDivergence')) {
+  const oiEl = document.getElementById('oiChange');
+  if (oiEl) {
+    const oi = mc.oiChangePct;
+    oiEl.innerText = oi != null ? `${(oi * 100).toFixed(2)}%` : '—';
+    oiEl.className = `text-xs font-bold ${oi > 0 ? 'text-emerald-400' : oi < 0 ? 'text-red-400' : 'text-white'}`;
+  }
+
+  const fgEl = document.getElementById('fearGreed');
+  if (fgEl) fgEl.innerText = mc.fearGreed != null ? `${mc.fearGreed} (${mc.fearGreedLabel})` : '—';
+
+  const corrEl = document.getElementById('correlation');
+  if (corrEl) corrEl.innerText = mc.correlation != null ? mc.correlation.toFixed(2) : '—';
+
+  const atrEl = document.getElementById('atrVal');
+  if (atrEl) atrEl.innerText = mc.atr ? `$${mc.atr.toFixed(2)}` : '—';
+
+  const regEl = document.getElementById('regime');
+  if (regEl) regEl.innerText = mc.regime || '—';
+
+  const supEl = document.getElementById('support');
+  const resEl = document.getElementById('resistance');
+  if (supEl) supEl.innerText = mc.support ? fmtUsd(mc.support) : '—';
+  if (resEl) resEl.innerText = mc.resistance ? fmtUsd(mc.resistance) : '—';
+
+  const divEl = document.getElementById('rsiDivergence');
+  if (divEl) {
     const div = mc.rsiDivergence || 'none';
-    const el = document.getElementById('rsiDivergence');
-    el.innerText = div === 'none' ? '—' : div.toUpperCase();
-    el.className = `text-xs font-bold ${div === 'bullish' ? 'text-emerald-400' : div === 'bearish' ? 'text-red-400' : 'text-white'}`;
+    divEl.innerText = div === 'none' ? '—' : div.toUpperCase();
+    divEl.className = `text-xs font-bold ${div === 'bullish' ? 'text-emerald-400' : div === 'bearish' ? 'text-red-400' : 'text-white'}`;
   }
-  if (document.getElementById('candlePattern')) {
+
+  const cpEl = document.getElementById('candlePattern');
+  if (cpEl) {
     const cp = mc.candlePattern || 'none';
-    document.getElementById('candlePattern').innerText = cp === 'none' ? '—' : cp.replace(/_/g, ' ').toUpperCase();
+    cpEl.innerText = cp === 'none' ? '—' : cp.replace(/_/g, ' ').toUpperCase();
   }
-  if (document.getElementById('volumeRatio')) {
-    document.getElementById('volumeRatio').innerText = mc.volumeRatio ? `${mc.volumeRatio}×` : '—';
-  }
+
+  const vrEl = document.getElementById('volumeRatio');
+  if (vrEl) vrEl.innerText = mc.volumeRatio ? `${mc.volumeRatio}×` : '—';
 }
 
 // ==================== RENDER: DYNAMIC PARAMS ====================
 function renderDynamicParams(p) {
   if (!p) return;
-  document.getElementById('paramMinAlign').innerText = `${p.minAlignment}/100`;
-  document.getElementById('paramMinConf').innerText = `${Math.round(p.minConfidence * 100)}%`;
-  document.getElementById('paramKelly').innerText = p.kellyFraction.toFixed(2);
-  document.getElementById('paramTpMult').innerText = `${p.atrTpMult.toFixed(1)}×`;
-  document.getElementById('paramSlMult').innerText = `${p.atrSlMult.toFixed(1)}×`;
+  const maEl = document.getElementById('paramMinAlign');
+  const mcEl = document.getElementById('paramMinConf');
+  const kEl = document.getElementById('paramKelly');
+  const tpEl = document.getElementById('paramTpMult');
+  const slEl = document.getElementById('paramSlMult');
+  if (maEl) maEl.innerText = `${p.minAlignment}/100`;
+  if (mcEl) mcEl.innerText = `${Math.round(p.minConfidence * 100)}%`;
+  if (kEl) kEl.innerText = p.kellyFraction.toFixed(2);
+  if (tpEl) tpEl.innerText = `${p.atrTpMult.toFixed(1)}×`;
+  if (slEl) slEl.innerText = `${p.atrSlMult.toFixed(1)}×`;
 }
 
 // ==================== RENDER: CALIBRATION ====================
 function renderCalibration(c) {
   if (!c) return;
   const render = (band) => {
-    const total = c[band].wins + c[band].losses;
+    const b = c[band];
+    if (!b) return '—';
+    const total = b.wins + b.losses;
     if (total === 0) return '—';
-    const wr = (c[band].wins / total * 100).toFixed(0);
-    return `${wr}% (${c[band].wins}W/${c[band].losses}L)`;
+    const wr = (b.wins / total * 100).toFixed(0);
+    return `${wr}% (${b.wins}W/${b.losses}L)`;
   };
-  document.getElementById('calibLow').innerText = render('low');
-  document.getElementById('calibMid').innerText = render('mid');
-  document.getElementById('calibHigh').innerText = render('high');
+  const lEl = document.getElementById('calibLow');
+  const mEl = document.getElementById('calibMid');
+  const hEl = document.getElementById('calibHigh');
+  if (lEl) lEl.innerText = render('low');
+  if (mEl) mEl.innerText = render('mid');
+  if (hEl) hEl.innerText = render('high');
 }
 
 // ==================== RENDER: BEST PATTERNS ====================
@@ -608,31 +637,29 @@ function renderBestPatterns(patterns, stats) {
 
   if (!patterns || patterns.length === 0) {
     list.innerHTML = '<p class="text-xs text-gray-500 text-center py-4">Belum ada data.</p>';
-    return;
+  } else {
+    list.innerHTML = patterns.map((p, i) => {
+      const wr = Math.round(p.winrate * 100);
+      const color = wr >= 60 ? 'text-emerald-400' : wr >= 45 ? 'text-amber-400' : 'text-red-400';
+      const emoji = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
+      return `
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <div class="flex justify-between items-center mb-1">
+            <span class="text-[10px] font-bold text-white">${emoji} Pattern #${i + 1}</span>
+            <span class="text-xs font-bold ${color}">${wr}%</span>
+          </div>
+          <p class="text-[9px] text-gray-500 truncate">${p.sig}</p>
+          <div class="flex justify-between text-[9px] text-gray-500 mt-0.5">
+            <span>${p.wins}W / ${p.losses}L</span>
+            <span>total ${p.total}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
   }
 
-  list.innerHTML = patterns.map((p, i) => {
-    const wr = Math.round(p.winrate * 100);
-    const color = wr >= 60 ? 'text-emerald-400' : wr >= 45 ? 'text-amber-400' : 'text-red-400';
-    const emoji = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
-    return `
-      <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
-        <div class="flex justify-between items-center mb-1">
-          <span class="text-[10px] font-bold text-white">${emoji} Pattern #${i + 1}</span>
-          <span class="text-xs font-bold ${color}">${wr}%</span>
-        </div>
-        <p class="text-[9px] text-gray-500 truncate">${p.sig}</p>
-        <div class="flex justify-between text-[9px] text-gray-500 mt-0.5">
-          <span>${p.wins}W / ${p.losses}L</span>
-          <span>total ${p.total}</span>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  // Session performance
   if (stats && stats.sessionPerformance) {
-    const renderSess = (key, elId) => {
+    const renderSess = (key) => {
       const s = stats.sessionPerformance[key];
       if (!s) return '—';
       const total = s.wins + s.losses;
@@ -652,15 +679,19 @@ function renderBestPatterns(patterns, stats) {
 // ==================== RENDER: METRICS ====================
 function renderMetrics(m, streak, wr) {
   if (!m) return;
-  document.getElementById('metricSharpe').innerText = m.sharpe ?? '—';
-  document.getElementById('metricPF').innerText = m.profitFactor ?? '—';
-  document.getElementById('metricAvgWin').innerText = m.avgWin != null ? `$${m.avgWin}` : '—';
-  document.getElementById('metricAvgLoss').innerText = m.avgLoss != null ? `$${m.avgLoss}` : '—';
-  document.getElementById('metricMaxDD').innerText = m.maxDrawdown != null ? `${m.maxDrawdown}%` : '—';
+  const sh = document.getElementById('metricSharpe');
+  const pf = document.getElementById('metricPF');
+  const aw = document.getElementById('metricAvgWin');
+  const al = document.getElementById('metricAvgLoss');
+  const dd = document.getElementById('metricMaxDD');
+  const st = document.getElementById('metricStreak');
 
-  if (streak) {
-    document.getElementById('metricStreak').innerText = `${streak.wins}W / ${streak.losses}L`;
-  }
+  if (sh) sh.innerText = m.sharpe ?? '—';
+  if (pf) pf.innerText = m.profitFactor ?? '—';
+  if (aw) aw.innerText = m.avgWin != null ? `$${m.avgWin}` : '—';
+  if (al) al.innerText = m.avgLoss != null ? `$${m.avgLoss}` : '—';
+  if (dd) dd.innerText = m.maxDrawdown != null ? `${m.maxDrawdown}%` : '—';
+  if (st && streak) st.innerText = `${streak.wins}W / ${streak.losses}L`;
 }
 
 // ==================== RENDER: ACTIVE TRADES ====================
@@ -847,7 +878,7 @@ setInterval(() => {
 // ==================== POLLING ====================
 function startPolling() {
   if (pollInterval) clearInterval(pollInterval);
-  pollInterval = setInterval(syncWithServer, 5000);
+  pollInterval = setInterval(syncWithServer, 8000);   // 8 detik (dari 5)
   syncWithServer();
 }
 
