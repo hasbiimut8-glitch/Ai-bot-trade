@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orion AI — Autonomous BTC Trading Agent</title>
+<title>Orion v5 — Autonomous BTC Trading Agent</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -27,9 +27,9 @@
     <div>
       <h1 class="font-bold text-base text-white tracking-tight flex items-center space-x-1">
         <span>Orion_AI</span>
-        <span class="text-[10px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded font-semibold">BTC</span>
+        <span class="text-[10px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded font-semibold">v5</span>
       </h1>
-      <p class="text-[10px] text-gray-400">AI Scalper Agent</p>
+      <p class="text-[10px] text-gray-400">Institutional BTC Agent</p>
     </div>
   </div>
 
@@ -38,453 +38,635 @@
       <span class="w-2 h-2 rounded-full bg-gray-500 pulse-dot"></span>
       <span id="botStatusText">Standby</span>
     </div>
-    <div class="w-9 h-9 rounded-xl glass-card flex items-center justify-center text-gray-300">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-      </svg>
-    </div>
   </div>
 </header>
 
+<!-- Tab Bar -->
+<div class="max-w-md mx-auto px-4 pt-3 sticky top-[68px] z-30">
+  <div class="glass-card rounded-xl p-1 flex border border-gray-800/80">
+    <button data-tab="trading" class="tab-btn tab-active flex-1 py-2 text-xs font-bold rounded-lg transition">📈 Trading</button>
+    <button data-tab="signals" class="tab-btn flex-1 py-2 text-xs font-bold rounded-lg transition text-gray-400">🎯 Signals</button>
+    <button data-tab="analytics" class="tab-btn flex-1 py-2 text-xs font-bold rounded-lg transition text-gray-400">🧠 Analytics</button>
+  </div>
+</div>
+
 <main class="max-w-md mx-auto p-4 space-y-4">
 
-  <!-- ==================== ROBOT 3D SCENE ==================== -->
-  <div class="glass-card rounded-2xl p-4 relative overflow-hidden glow-orange border border-orange-500/20">
-    <div class="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br from-orange-500/25 to-amber-500/5 rounded-full blur-3xl pointer-events-none"></div>
+  <!-- ==================== TAB: TRADING ==================== -->
+  <div id="tab-trading" class="tab-content space-y-4">
 
-    <div class="flex justify-between items-center mb-3 relative z-10">
-      <div>
-        <h2 class="text-lg font-bold text-white tracking-tight">Orion siap tempur!</h2>
-        <p class="text-[11px] text-gray-400 mt-0.5">
-          <span class="text-orange-400 font-semibold">Orion</span> memindai chart BTC & eksekusi posisi otomatis.
-        </p>
-      </div>
-      <div class="flex flex-col items-end gap-1">
-        <span id="trendBadge" class="badge-pill">—</span>
-        <span id="confidenceBadge" class="badge-pill">Conf: —</span>
-      </div>
-    </div>
+    <!-- Robot 3D Scene -->
+    <div class="glass-card rounded-2xl p-4 relative overflow-hidden glow-orange border border-orange-500/20">
+      <div class="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br from-orange-500/25 to-amber-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
-    <!-- Robot Scene -->
-    <div class="w-full rounded-2xl bg-gradient-to-b from-[#1a0f08] via-[#0d0a08] to-[#050508] border border-orange-500/30 flex items-center justify-center relative shadow-2xl overflow-hidden" style="aspect-ratio: 1 / 1;">
-      <div class="absolute inset-2 border border-dashed border-orange-500/15 rounded-xl pointer-events-none"></div>
-      <div class="absolute w-40 h-40 bg-orange-500/20 rounded-full blur-3xl"></div>
-
-      <!-- SPEECH BUBBLE -->
-      <div id="speechBubble" class="speech-bubble hidden">
-        <div class="speech-bubble-tail"></div>
-        <span id="speechText">...</span>
-      </div>
-
-      <svg class="w-full h-full relative z-10 robot-3d-scene" viewBox="0 0 320 340" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <radialGradient id="h3dHead" cx="35%" cy="25%" r="80%">
-            <stop offset="0%" stop-color="#fdf8f0"/>
-            <stop offset="30%" stop-color="#f0e6d6"/>
-            <stop offset="65%" stop-color="#c5b7a3"/>
-            <stop offset="100%" stop-color="#7d7160"/>
-          </radialGradient>
-          <radialGradient id="h3dBody" cx="40%" cy="22%" r="95%">
-            <stop offset="0%" stop-color="#faf3e8"/>
-            <stop offset="35%" stop-color="#e6dcc9"/>
-            <stop offset="70%" stop-color="#b0a48e"/>
-            <stop offset="100%" stop-color="#6e6353"/>
-          </radialGradient>
-          <radialGradient id="h3dVisor" cx="50%" cy="30%" r="85%">
-            <stop offset="0%" stop-color="#252525"/>
-            <stop offset="55%" stop-color="#0c0c0c"/>
-            <stop offset="100%" stop-color="#000000"/>
-          </radialGradient>
-          <radialGradient id="h3dEye" cx="35%" cy="30%" r="75%">
-            <stop offset="0%" stop-color="#fff2d1"/>
-            <stop offset="30%" stop-color="#ffbc5c"/>
-            <stop offset="65%" stop-color="#f7931a"/>
-            <stop offset="100%" stop-color="#8f4300"/>
-          </radialGradient>
-          <radialGradient id="h3dHeart" cx="35%" cy="30%" r="85%">
-            <stop offset="0%" stop-color="#ffdfa3"/>
-            <stop offset="35%" stop-color="#ffab3b"/>
-            <stop offset="100%" stop-color="#b35400"/>
-          </radialGradient>
-          <radialGradient id="h3dEar" cx="35%" cy="30%" r="85%">
-            <stop offset="0%" stop-color="#f5ecdb"/>
-            <stop offset="60%" stop-color="#c1b4a0"/>
-            <stop offset="100%" stop-color="#6e6353"/>
-          </radialGradient>
-          <linearGradient id="h3dArm" x1="0%" y1="0%" x2="20%" y2="100%">
-            <stop offset="0%" stop-color="#f0e6d4"/>
-            <stop offset="55%" stop-color="#c0b29e"/>
-            <stop offset="100%" stop-color="#7a6e5f"/>
-          </linearGradient>
-          <linearGradient id="h3dLaptop" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stop-color="#2b1e16"/>
-            <stop offset="100%" stop-color="#0a0707"/>
-          </linearGradient>
-          <linearGradient id="h3dDesk" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stop-color="#2c1a10"/>
-            <stop offset="100%" stop-color="#080505"/>
-          </linearGradient>
-          <radialGradient id="h3dBg" cx="50%" cy="35%" r="80%">
-            <stop offset="0%" stop-color="#26140a"/>
-            <stop offset="60%" stop-color="#0d0908"/>
-            <stop offset="100%" stop-color="#050508"/>
-          </radialGradient>
-
-          <filter id="h3dGlow" x="-100%" y="-100%" width="300%" height="300%">
-            <feGaussianBlur stdDeviation="2.5"/>
-          </filter>
-          <filter id="h3dGlowBig" x="-100%" y="-100%" width="300%" height="300%">
-            <feGaussianBlur stdDeviation="7"/>
-          </filter>
-          <filter id="h3dShadow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="3"/>
-          </filter>
-        </defs>
-
-        <!-- Background -->
-        <rect width="320" height="340" fill="url(#h3dBg)"/>
-
-        <!-- Window city -->
-        <g opacity="0.35">
-          <rect x="6" y="20" width="72" height="130" rx="8" fill="#3d1e08"/>
-          <rect x="14" y="40" width="6" height="40" fill="#f7931a" opacity="0.4"/>
-          <rect x="26" y="30" width="4" height="55" fill="#f7931a" opacity="0.3"/>
-          <rect x="38" y="50" width="5" height="45" fill="#f7931a" opacity="0.35"/>
-          <rect x="52" y="35" width="4" height="60" fill="#f7931a" opacity="0.3"/>
-        </g>
-
-        <!-- Wall tech -->
-        <g opacity="0.4">
-          <rect x="245" y="30" width="65" height="90" rx="6" fill="#1a0e06"/>
-          <path d="M 258 55 L 278 55 M 258 65 L 278 65 M 258 75 L 270 75" stroke="#f7931a" stroke-width="1.5" opacity="0.5"/>
-          <path d="M 285 90 C 285 82 292 78 296 78 C 300 78 307 82 307 90" stroke="#f7931a" stroke-width="1.5" fill="none" opacity="0.6"/>
-        </g>
-
-        <!-- Desk -->
-        <ellipse cx="160" cy="295" rx="150" ry="30" fill="#f7931a" opacity="0.15" filter="url(#h3dGlowBig)"/>
-        <rect x="0" y="290" width="320" height="60" fill="url(#h3dDesk)"/>
-        <line x1="0" y1="290" x2="320" y2="290" stroke="#f7931a" stroke-width="0.8" opacity="0.4"/>
-
-        <!-- Body -->
-        <path d="M 112 195 Q 102 200 98 220 L 98 255 Q 98 265 108 267 L 212 267 Q 222 265 222 255 L 222 220 Q 218 200 208 195 Q 186 184 160 184 Q 134 184 112 195 Z"
-              fill="url(#h3dBody)" stroke="#5c5142" stroke-width="1"/>
-
-        <!-- Neck -->
-        <rect x="146" y="174" width="28" height="14" rx="5" fill="#7a6d5c"/>
-        <rect x="149" y="176" width="22" height="10" rx="3" fill="#9c8f7c" opacity="0.4"/>
-
-        <!-- Shoulders -->
-        <ellipse cx="107" cy="210" rx="16" ry="19" fill="url(#h3dEar)" stroke="#5c5142" stroke-width="0.8"/>
-        <ellipse cx="213" cy="210" rx="16" ry="19" fill="url(#h3dEar)" stroke="#5c5142" stroke-width="0.8"/>
-
-        <!-- Heart -->
-        <ellipse cx="160" cy="222" rx="26" ry="22" fill="#f7931a" opacity="0.28" filter="url(#h3dGlowBig)"/>
-        <g class="heart-3d">
-          <path d="M 160 238 C 160 238 142 224 142 211 C 142 203 149 199 155 199 C 158 199 160 202 160 202 C 160 202 162 199 165 199 C 171 199 178 203 178 211 C 178 224 160 238 160 238 Z"
-                fill="url(#h3dHeart)"/>
-          <path d="M 160 238 C 160 238 142 224 142 211 C 142 203 149 199 155 199 C 158 199 160 202 160 202 C 160 202 162 199 165 199 C 171 199 178 203 178 211 C 178 224 160 238 160 238 Z"
-                fill="none" stroke="#ffcc7a" stroke-width="0.6" opacity="0.6"/>
-        </g>
-
-        <!-- Head -->
-        <ellipse cx="160" cy="112" rx="60" ry="58" fill="url(#h3dHead)" stroke="#5c5142" stroke-width="1"/>
-
-        <!-- Head top accent -->
-        <path d="M 112 92 Q 160 60 208 92" fill="none" stroke="#f7931a" stroke-width="2" stroke-linecap="round" opacity="0.7" filter="url(#h3dGlow)"/>
-
-        <!-- Headphone band -->
-        <path d="M 104 92 Q 160 44 216 92" fill="none" stroke="#4e4335" stroke-width="5" stroke-linecap="round"/>
-
-        <!-- Ears -->
-        <ellipse cx="100" cy="112" rx="13" ry="21" fill="url(#h3dEar)" stroke="#5c5142" stroke-width="0.8"/>
-        <ellipse cx="100" cy="112" rx="5" ry="11" fill="#f7931a" opacity="0.55" filter="url(#h3dGlow)"/>
-        <ellipse cx="220" cy="112" rx="13" ry="21" fill="url(#h3dEar)" stroke="#5c5142" stroke-width="0.8"/>
-        <ellipse cx="220" cy="112" rx="5" ry="11" fill="#f7931a" opacity="0.55" filter="url(#h3dGlow)"/>
-
-        <!-- Antenna -->
-        <line x1="160" y1="54" x2="160" y2="32" stroke="#7a6d5c" stroke-width="3" stroke-linecap="round"/>
-        <circle cx="160" cy="28" r="5" fill="#f7931a" class="antenna-3d"/>
-
-        <!-- Visor -->
-        <ellipse cx="160" cy="118" rx="46" ry="40" fill="url(#h3dVisor)"/>
-
-        <!-- ==================== FACE NORMAL ==================== -->
-        <g class="face-normal">
-          <circle cx="142" cy="115" r="15" fill="#f7931a" opacity="0.4" filter="url(#h3dGlow)"/>
-          <circle cx="178" cy="115" r="15" fill="#f7931a" opacity="0.4" filter="url(#h3dGlow)"/>
-          <g class="eyes-3d">
-            <circle cx="142" cy="115" r="10" fill="url(#h3dEye)"/>
-            <circle cx="139" cy="111" r="2.8" fill="#fff" opacity="0.75"/>
-            <circle cx="178" cy="115" r="10" fill="url(#h3dEye)"/>
-            <circle cx="175" cy="111" r="2.8" fill="#fff" opacity="0.75"/>
-          </g>
-          <path d="M 146 138 Q 160 150 174 138" stroke="#f7931a" stroke-width="2.8" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
-        </g>
-
-        <!-- ==================== FACE HAPPY ==================== -->
-        <g class="face-happy">
-          <circle cx="142" cy="115" r="18" fill="#f7931a" opacity="0.55" filter="url(#h3dGlow)"/>
-          <circle cx="178" cy="115" r="18" fill="#f7931a" opacity="0.55" filter="url(#h3dGlow)"/>
-          <path d="M 130 118 Q 142 106 154 118" stroke="#f7931a" stroke-width="3.5" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
-          <path d="M 166 118 Q 178 106 190 118" stroke="#f7931a" stroke-width="3.5" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
-          <path d="M 138 132 Q 160 158 182 132" stroke="#f7931a" stroke-width="3.2" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
-          <circle cx="128" cy="134" r="3" fill="#f7931a" opacity="0.7" filter="url(#h3dGlow)"/>
-          <circle cx="192" cy="134" r="3" fill="#f7931a" opacity="0.7" filter="url(#h3dGlow)"/>
-        </g>
-
-        <!-- ==================== FACE SAD ==================== -->
-        <g class="face-sad">
-          <circle cx="142" cy="120" r="12" fill="#f7931a" opacity="0.25" filter="url(#h3dGlow)"/>
-          <circle cx="178" cy="120" r="12" fill="#f7931a" opacity="0.25" filter="url(#h3dGlow)"/>
-          <path d="M 132 118 Q 142 124 152 118" stroke="#f7931a" stroke-width="3" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
-          <path d="M 168 118 Q 178 124 188 118" stroke="#f7931a" stroke-width="3" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
-          <path d="M 148 148 Q 160 136 172 148" stroke="#f7931a" stroke-width="3" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
-          <path d="M 128 128 L 134 134 M 128 134 L 134 128" stroke="#60a5fa" stroke-width="1.5" opacity="0.7" stroke-linecap="round"/>
-          <path d="M 186 128 L 192 134 M 186 134 L 192 128" stroke="#60a5fa" stroke-width="1.5" opacity="0.7" stroke-linecap="round"/>
-        </g>
-
-        <!-- Laptop -->
-        <g>
-          <ellipse cx="160" cy="296" rx="85" ry="8" fill="#000" opacity="0.6" filter="url(#h3dShadow)"/>
-          <path d="M 78 268 Q 76 258 86 256 L 234 256 Q 244 258 242 268 L 252 292 Q 252 298 246 298 L 74 298 Q 68 298 68 292 Z"
-                fill="url(#h3dLaptop)" stroke="#3d2a1c" stroke-width="1"/>
-          <ellipse cx="160" cy="278" rx="24" ry="16" fill="#f7931a" opacity="0.3" filter="url(#h3dGlowBig)"/>
-          <path d="M 145 282 Q 139 282 139 276 Q 139 270 145 270 Q 145 262 154 262 Q 159 259 163 264 Q 167 259 173 263 Q 180 263 180 270 Q 185 271 185 277 Q 185 283 179 283 Z"
-                fill="none" stroke="#f7931a" stroke-width="1.8" stroke-linejoin="round" filter="url(#h3dGlow)"/>
-          <circle cx="152" cy="274" r="1.6" fill="#f7931a"/>
-          <circle cx="166" cy="274" r="1.6" fill="#f7931a"/>
-          <path d="M 151 279 Q 159 284 167 279" stroke="#f7931a" stroke-width="1.3" fill="none" stroke-linecap="round"/>
-        </g>
-
-        <!-- Left arm typing -->
-        <g class="arm-left-3d">
-          <path d="M 108 215 L 96 250 L 108 272" stroke="url(#h3dArm)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          <path d="M 108 215 L 96 250 L 108 272" stroke="#f0e6d4" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.35"/>
-          <ellipse cx="110" cy="274" rx="11" ry="7" fill="#e8dfcf" stroke="#5c5142" stroke-width="0.8"/>
-          <circle cx="104" cy="276" r="1.8" fill="#7a6d5c"/>
-          <circle cx="110" cy="278" r="1.8" fill="#7a6d5c"/>
-          <circle cx="116" cy="278" r="1.8" fill="#7a6d5c"/>
-        </g>
-
-        <!-- Right arm typing -->
-        <g class="arm-right-3d">
-          <path d="M 212 215 L 224 250 L 212 272" stroke="url(#h3dArm)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          <path d="M 212 215 L 224 250 L 212 272" stroke="#f0e6d4" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.35"/>
-          <ellipse cx="210" cy="274" rx="11" ry="7" fill="#e8dfcf" stroke="#5c5142" stroke-width="0.8"/>
-          <circle cx="204" cy="276" r="1.8" fill="#7a6d5c"/>
-          <circle cx="210" cy="278" r="1.8" fill="#7a6d5c"/>
-          <circle cx="216" cy="278" r="1.8" fill="#7a6d5c"/>
-        </g>
-
-        <!-- Coffee -->
-        <g>
-          <ellipse cx="48" cy="308" rx="18" ry="5" fill="#000" opacity="0.5"/>
-          <path d="M 33 280 Q 33 308 48 308 Q 63 308 63 280 Z" fill="#1a1008" stroke="#3d2a1c" stroke-width="0.8"/>
-          <ellipse cx="48" cy="280" rx="15" ry="4.5" fill="#080403" stroke="#3d2a1c" stroke-width="0.6"/>
-          <path d="M 45 272 Q 43 268 45 264 M 51 272 Q 49 268 51 264" stroke="#f7931a" stroke-width="1" fill="none" opacity="0.4" class="steam"/>
-          <path d="M 48 296 C 48 296 41 290 41 285 C 41 282 44 280 46 280 C 47 280 48 281 48 281 C 48 281 49 280 50 280 C 52 280 55 282 55 285 C 55 290 48 296 48 296 Z"
-                fill="#f7931a" opacity="0.9" filter="url(#h3dGlow)"/>
-          <path d="M 63 285 Q 73 285 73 294 Q 73 303 63 303" fill="none" stroke="#3d2a1c" stroke-width="2.5"/>
-        </g>
-
-        <!-- Notebook + pen -->
-        <g>
-          <rect x="240" y="288" width="60" height="22" rx="2.5" fill="#0a0808" stroke="#3d2a1c" stroke-width="0.7" transform="rotate(-4 270 299)"/>
-          <line x1="245" y1="292" x2="293" y2="289" stroke="#f7931a" stroke-width="0.6" opacity="0.5"/>
-          <rect x="262" y="302" width="26" height="3" rx="1.2" fill="#8a7d6d" transform="rotate(-22 275 304)"/>
-          <circle cx="288" cy="297" r="2.2" fill="#f7931a" opacity="0.75" filter="url(#h3dGlow)" class="pen-tip"/>
-        </g>
-
-        <!-- Plant -->
-        <g opacity="0.85">
-          <ellipse cx="300" cy="308" rx="12" ry="3" fill="#000" opacity="0.5"/>
-          <path d="M 288 306 L 290 288 L 310 288 L 312 306 Z" fill="#2a1a10" stroke="#3d2a1c" stroke-width="0.6"/>
-          <path d="M 296 288 Q 292 275 296 268 M 302 288 Q 306 274 302 266 M 300 288 Q 300 272 300 262"
-                stroke="#3d5a3a" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-          <ellipse cx="296" cy="266" rx="5" ry="3" fill="#4a6b45"/>
-          <ellipse cx="303" cy="264" rx="5" ry="3" fill="#4a6b45"/>
-          <ellipse cx="300" cy="260" rx="4" ry="3" fill="#4a6b45"/>
-        </g>
-      </svg>
-    </div>
-
-    <!-- PnL + tombol -->
-    <div class="flex items-center justify-between bg-gray-900/80 rounded-xl p-3.5 border border-gray-800/80 mt-3 relative z-10">
-      <div>
-        <span class="text-[11px] text-gray-400 font-medium block">Total PnL</span>
-        <div class="flex items-center space-x-1.5 mt-0.5">
-          <span id="todayPnL" class="text-base font-bold text-gray-400">+$0.00</span>
-          <span id="profitPercentage" class="text-[10px] text-gray-400 bg-gray-500/10 px-1 py-0.5 rounded font-semibold">(+0.00%)</span>
-        </div>
-      </div>
-      <button id="toggleBtn" class="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-orange-600/35">
-        Mulai Bot
-      </button>
-    </div>
-  </div>
-
-  <!-- Market Card -->
-  <div class="glass-card rounded-2xl p-4">
-    <div class="flex justify-between items-center mb-3">
-      <div class="flex items-center space-x-2.5">
-        <div class="w-8 h-8 rounded-xl bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold text-sm border border-orange-500/30">₿</div>
+      <div class="flex justify-between items-center mb-3 relative z-10">
         <div>
-          <h3 class="font-bold text-white text-sm">BTC/USDT</h3>
-          <p class="text-[10px] text-gray-400">Crypto • <span id="chartStatusLabel" class="text-gray-500">Standby</span></p>
+          <h2 class="text-lg font-bold text-white tracking-tight">Orion siap tempur!</h2>
+          <p class="text-[11px] text-gray-400 mt-0.5">
+            <span class="text-orange-400 font-semibold">Orion</span> analisis institusional & eksekusi otomatis.
+          </p>
+        </div>
+        <div class="flex flex-col items-end gap-1">
+          <span id="trendBadge" class="badge-pill">—</span>
+          <span id="confidenceBadge" class="badge-pill">Conf: —</span>
         </div>
       </div>
-      <div class="text-right">
-        <span id="crypto-price" class="text-base font-bold text-white">$0.00</span>
-        <span id="crypto-change" class="text-xs text-gray-400 block font-semibold">0.00%</span>
+
+      <div class="w-full rounded-2xl bg-gradient-to-b from-[#1a0f08] via-[#0d0a08] to-[#050508] border border-orange-500/30 flex items-center justify-center relative shadow-2xl overflow-hidden" style="aspect-ratio: 1 / 1;">
+        <div class="absolute inset-2 border border-dashed border-orange-500/15 rounded-xl pointer-events-none"></div>
+        <div class="absolute w-40 h-40 bg-orange-500/20 rounded-full blur-3xl"></div>
+
+        <div id="speechBubble" class="speech-bubble hidden">
+          <div class="speech-bubble-tail"></div>
+          <span id="speechText">...</span>
+        </div>
+
+        <svg class="w-full h-full relative z-10 robot-3d-scene" viewBox="0 0 320 340" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient id="h3dHead" cx="35%" cy="25%" r="80%"><stop offset="0%" stop-color="#fdf8f0"/><stop offset="30%" stop-color="#f0e6d6"/><stop offset="65%" stop-color="#c5b7a3"/><stop offset="100%" stop-color="#7d7160"/></radialGradient>
+            <radialGradient id="h3dBody" cx="40%" cy="22%" r="95%"><stop offset="0%" stop-color="#faf3e8"/><stop offset="35%" stop-color="#e6dcc9"/><stop offset="70%" stop-color="#b0a48e"/><stop offset="100%" stop-color="#6e6353"/></radialGradient>
+            <radialGradient id="h3dVisor" cx="50%" cy="30%" r="85%"><stop offset="0%" stop-color="#252525"/><stop offset="55%" stop-color="#0c0c0c"/><stop offset="100%" stop-color="#000"/></radialGradient>
+            <radialGradient id="h3dEye" cx="35%" cy="30%" r="75%"><stop offset="0%" stop-color="#fff2d1"/><stop offset="30%" stop-color="#ffbc5c"/><stop offset="65%" stop-color="#f7931a"/><stop offset="100%" stop-color="#8f4300"/></radialGradient>
+            <radialGradient id="h3dHeart" cx="35%" cy="30%" r="85%"><stop offset="0%" stop-color="#ffdfa3"/><stop offset="35%" stop-color="#ffab3b"/><stop offset="100%" stop-color="#b35400"/></radialGradient>
+            <radialGradient id="h3dEar" cx="35%" cy="30%" r="85%"><stop offset="0%" stop-color="#f5ecdb"/><stop offset="60%" stop-color="#c1b4a0"/><stop offset="100%" stop-color="#6e6353"/></radialGradient>
+            <linearGradient id="h3dArm" x1="0%" y1="0%" x2="20%" y2="100%"><stop offset="0%" stop-color="#f0e6d4"/><stop offset="55%" stop-color="#c0b29e"/><stop offset="100%" stop-color="#7a6e5f"/></linearGradient>
+            <linearGradient id="h3dLaptop" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#2b1e16"/><stop offset="100%" stop-color="#0a0707"/></linearGradient>
+            <linearGradient id="h3dDesk" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#2c1a10"/><stop offset="100%" stop-color="#080505"/></linearGradient>
+            <radialGradient id="h3dBg" cx="50%" cy="35%" r="80%"><stop offset="0%" stop-color="#26140a"/><stop offset="60%" stop-color="#0d0908"/><stop offset="100%" stop-color="#050508"/></radialGradient>
+            <filter id="h3dGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2.5"/></filter>
+            <filter id="h3dGlowBig" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="7"/></filter>
+            <filter id="h3dShadow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
+          </defs>
+
+          <rect width="320" height="340" fill="url(#h3dBg)"/>
+          <g opacity="0.35"><rect x="6" y="20" width="72" height="130" rx="8" fill="#3d1e08"/><rect x="14" y="40" width="6" height="40" fill="#f7931a" opacity="0.4"/><rect x="26" y="30" width="4" height="55" fill="#f7931a" opacity="0.3"/><rect x="38" y="50" width="5" height="45" fill="#f7931a" opacity="0.35"/><rect x="52" y="35" width="4" height="60" fill="#f7931a" opacity="0.3"/></g>
+          <g opacity="0.4"><rect x="245" y="30" width="65" height="90" rx="6" fill="#1a0e06"/><path d="M 258 55 L 278 55 M 258 65 L 278 65 M 258 75 L 270 75" stroke="#f7931a" stroke-width="1.5" opacity="0.5"/><path d="M 285 90 C 285 82 292 78 296 78 C 300 78 307 82 307 90" stroke="#f7931a" stroke-width="1.5" fill="none" opacity="0.6"/></g>
+
+          <ellipse cx="160" cy="295" rx="150" ry="30" fill="#f7931a" opacity="0.15" filter="url(#h3dGlowBig)"/>
+          <rect x="0" y="290" width="320" height="60" fill="url(#h3dDesk)"/>
+          <line x1="0" y1="290" x2="320" y2="290" stroke="#f7931a" stroke-width="0.8" opacity="0.4"/>
+
+          <path d="M 112 195 Q 102 200 98 220 L 98 255 Q 98 265 108 267 L 212 267 Q 222 265 222 255 L 222 220 Q 218 200 208 195 Q 186 184 160 184 Q 134 184 112 195 Z" fill="url(#h3dBody)" stroke="#5c5142" stroke-width="1"/>
+          <rect x="146" y="174" width="28" height="14" rx="5" fill="#7a6d5c"/>
+          <rect x="149" y="176" width="22" height="10" rx="3" fill="#9c8f7c" opacity="0.4"/>
+          <ellipse cx="107" cy="210" rx="16" ry="19" fill="url(#h3dEar)" stroke="#5c5142" stroke-width="0.8"/>
+          <ellipse cx="213" cy="210" rx="16" ry="19" fill="url(#h3dEar)" stroke="#5c5142" stroke-width="0.8"/>
+          <ellipse cx="160" cy="222" rx="26" ry="22" fill="#f7931a" opacity="0.28" filter="url(#h3dGlowBig)"/>
+          <g class="heart-3d">
+            <path d="M 160 238 C 160 238 142 224 142 211 C 142 203 149 199 155 199 C 158 199 160 202 160 202 C 160 202 162 199 165 199 C 171 199 178 203 178 211 C 178 224 160 238 160 238 Z" fill="url(#h3dHeart)"/>
+            <path d="M 160 238 C 160 238 142 224 142 211 C 142 203 149 199 155 199 C 158 199 160 202 160 202 C 160 202 162 199 165 199 C 171 199 178 203 178 211 C 178 224 160 238 160 238 Z" fill="none" stroke="#ffcc7a" stroke-width="0.6" opacity="0.6"/>
+          </g>
+
+          <ellipse cx="160" cy="112" rx="60" ry="58" fill="url(#h3dHead)" stroke="#5c5142" stroke-width="1"/>
+          <path d="M 112 92 Q 160 60 208 92" fill="none" stroke="#f7931a" stroke-width="2" stroke-linecap="round" opacity="0.7" filter="url(#h3dGlow)"/>
+          <path d="M 104 92 Q 160 44 216 92" fill="none" stroke="#4e4335" stroke-width="5" stroke-linecap="round"/>
+          <ellipse cx="100" cy="112" rx="13" ry="21" fill="url(#h3dEar)" stroke="#5c5142" stroke-width="0.8"/>
+          <ellipse cx="100" cy="112" rx="5" ry="11" fill="#f7931a" opacity="0.55" filter="url(#h3dGlow)"/>
+          <ellipse cx="220" cy="112" rx="13" ry="21" fill="url(#h3dEar)" stroke="#5c5142" stroke-width="0.8"/>
+          <ellipse cx="220" cy="112" rx="5" ry="11" fill="#f7931a" opacity="0.55" filter="url(#h3dGlow)"/>
+          <line x1="160" y1="54" x2="160" y2="32" stroke="#7a6d5c" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="160" cy="28" r="5" fill="#f7931a" class="antenna-3d"/>
+          <ellipse cx="160" cy="118" rx="46" ry="40" fill="url(#h3dVisor)"/>
+
+          <g class="face-normal">
+            <circle cx="142" cy="115" r="15" fill="#f7931a" opacity="0.4" filter="url(#h3dGlow)"/>
+            <circle cx="178" cy="115" r="15" fill="#f7931a" opacity="0.4" filter="url(#h3dGlow)"/>
+            <g class="eyes-3d">
+              <circle cx="142" cy="115" r="10" fill="url(#h3dEye)"/><circle cx="139" cy="111" r="2.8" fill="#fff" opacity="0.75"/>
+              <circle cx="178" cy="115" r="10" fill="url(#h3dEye)"/><circle cx="175" cy="111" r="2.8" fill="#fff" opacity="0.75"/>
+            </g>
+            <path d="M 146 138 Q 160 150 174 138" stroke="#f7931a" stroke-width="2.8" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
+          </g>
+
+          <g class="face-happy">
+            <circle cx="142" cy="115" r="18" fill="#f7931a" opacity="0.55" filter="url(#h3dGlow)"/>
+            <circle cx="178" cy="115" r="18" fill="#f7931a" opacity="0.55" filter="url(#h3dGlow)"/>
+            <path d="M 130 118 Q 142 106 154 118" stroke="#f7931a" stroke-width="3.5" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
+            <path d="M 166 118 Q 178 106 190 118" stroke="#f7931a" stroke-width="3.5" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
+            <path d="M 138 132 Q 160 158 182 132" stroke="#f7931a" stroke-width="3.2" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
+            <circle cx="128" cy="134" r="3" fill="#f7931a" opacity="0.7" filter="url(#h3dGlow)"/>
+            <circle cx="192" cy="134" r="3" fill="#f7931a" opacity="0.7" filter="url(#h3dGlow)"/>
+          </g>
+
+          <g class="face-sad">
+            <circle cx="142" cy="120" r="12" fill="#f7931a" opacity="0.25" filter="url(#h3dGlow)"/>
+            <circle cx="178" cy="120" r="12" fill="#f7931a" opacity="0.25" filter="url(#h3dGlow)"/>
+            <path d="M 132 118 Q 142 124 152 118" stroke="#f7931a" stroke-width="3" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
+            <path d="M 168 118 Q 178 124 188 118" stroke="#f7931a" stroke-width="3" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
+            <path d="M 148 148 Q 160 136 172 148" stroke="#f7931a" stroke-width="3" fill="none" stroke-linecap="round" filter="url(#h3dGlow)"/>
+          </g>
+
+          <g>
+            <ellipse cx="160" cy="296" rx="85" ry="8" fill="#000" opacity="0.6" filter="url(#h3dShadow)"/>
+            <path d="M 78 268 Q 76 258 86 256 L 234 256 Q 244 258 242 268 L 252 292 Q 252 298 246 298 L 74 298 Q 68 298 68 292 Z" fill="url(#h3dLaptop)" stroke="#3d2a1c" stroke-width="1"/>
+            <ellipse cx="160" cy="278" rx="24" ry="16" fill="#f7931a" opacity="0.3" filter="url(#h3dGlowBig)"/>
+            <path d="M 145 282 Q 139 282 139 276 Q 139 270 145 270 Q 145 262 154 262 Q 159 259 163 264 Q 167 259 173 263 Q 180 263 180 270 Q 185 271 185 277 Q 185 283 179 283 Z" fill="none" stroke="#f7931a" stroke-width="1.8" stroke-linejoin="round" filter="url(#h3dGlow)"/>
+            <circle cx="152" cy="274" r="1.6" fill="#f7931a"/>
+            <circle cx="166" cy="274" r="1.6" fill="#f7931a"/>
+            <path d="M 151 279 Q 159 284 167 279" stroke="#f7931a" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+          </g>
+
+          <g class="arm-left-3d">
+            <path d="M 108 215 L 96 250 L 108 272" stroke="url(#h3dArm)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <ellipse cx="110" cy="274" rx="11" ry="7" fill="#e8dfcf" stroke="#5c5142" stroke-width="0.8"/>
+            <circle cx="104" cy="276" r="1.8" fill="#7a6d5c"/><circle cx="110" cy="278" r="1.8" fill="#7a6d5c"/><circle cx="116" cy="278" r="1.8" fill="#7a6d5c"/>
+          </g>
+          <g class="arm-right-3d">
+            <path d="M 212 215 L 224 250 L 212 272" stroke="url(#h3dArm)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <ellipse cx="210" cy="274" rx="11" ry="7" fill="#e8dfcf" stroke="#5c5142" stroke-width="0.8"/>
+            <circle cx="204" cy="276" r="1.8" fill="#7a6d5c"/><circle cx="210" cy="278" r="1.8" fill="#7a6d5c"/><circle cx="216" cy="278" r="1.8" fill="#7a6d5c"/>
+          </g>
+
+          <g>
+            <ellipse cx="48" cy="308" rx="18" ry="5" fill="#000" opacity="0.5"/>
+            <path d="M 33 280 Q 33 308 48 308 Q 63 308 63 280 Z" fill="#1a1008" stroke="#3d2a1c" stroke-width="0.8"/>
+            <ellipse cx="48" cy="280" rx="15" ry="4.5" fill="#080403" stroke="#3d2a1c" stroke-width="0.6"/>
+            <path d="M 48 296 C 48 296 41 290 41 285 C 41 282 44 280 46 280 C 47 280 48 281 48 281 C 48 281 49 280 50 280 C 52 280 55 282 55 285 C 55 290 48 296 48 296 Z" fill="#f7931a" opacity="0.9" filter="url(#h3dGlow)"/>
+            <path d="M 63 285 Q 73 285 73 294 Q 73 303 63 303" fill="none" stroke="#3d2a1c" stroke-width="2.5"/>
+          </g>
+        </svg>
+      </div>
+
+      <div class="flex items-center justify-between bg-gray-900/80 rounded-xl p-3.5 border border-gray-800/80 mt-3 relative z-10">
+        <div>
+          <span class="text-[11px] text-gray-400 font-medium block">Total PnL</span>
+          <div class="flex items-center space-x-1.5 mt-0.5">
+            <span id="todayPnL" class="text-base font-bold text-gray-400">+$0.00</span>
+            <span id="profitPercentage" class="text-[10px] text-gray-400 bg-gray-500/10 px-1 py-0.5 rounded font-semibold">(+0.00%)</span>
+          </div>
+        </div>
+        <button id="toggleBtn" class="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-orange-600/35">
+          Mulai Bot
+        </button>
       </div>
     </div>
 
-    <div class="h-36 w-full bg-gray-900/70 rounded-xl border border-gray-800/80 p-2 relative overflow-hidden">
-      <canvas id="tradingChart"></canvas>
+    <!-- Market Card -->
+    <div class="glass-card rounded-2xl p-4">
+      <div class="flex justify-between items-center mb-3">
+        <div class="flex items-center space-x-2.5">
+          <div class="w-8 h-8 rounded-xl bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold text-sm border border-orange-500/30">₿</div>
+          <div>
+            <h3 class="font-bold text-white text-sm">BTC/USDT</h3>
+            <p class="text-[10px] text-gray-400">Crypto • <span id="chartStatusLabel" class="text-gray-500">Standby</span></p>
+          </div>
+        </div>
+        <div class="text-right">
+          <span id="crypto-price" class="text-base font-bold text-white">$0.00</span>
+          <span id="crypto-change" class="text-xs text-gray-400 block font-semibold">0.00%</span>
+        </div>
+      </div>
+
+      <div class="h-36 w-full bg-gray-900/70 rounded-xl border border-gray-800/80 p-2 relative overflow-hidden">
+        <canvas id="tradingChart"></canvas>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+        <div class="bg-gray-900/80 p-2 rounded-xl border border-gray-800">
+          <span class="text-[9px] text-gray-400 block font-medium">RSI (14)</span>
+          <span id="ind-rsi" class="text-xs font-bold text-amber-400">—</span>
+        </div>
+        <div class="bg-gray-900/80 p-2 rounded-xl border border-gray-800">
+          <span class="text-[9px] text-gray-400 block font-medium">EMA (20)</span>
+          <span id="ind-ema" class="text-xs font-bold text-cyan-400">—</span>
+        </div>
+        <div class="bg-gray-900/80 p-2 rounded-xl border border-gray-800">
+          <span class="text-[9px] text-gray-400 font-medium block">MACD</span>
+          <span id="ind-macd" class="text-[10px] font-bold text-indigo-400 truncate block">—</span>
+        </div>
+      </div>
+
+      <div class="bg-gray-900/90 rounded-xl p-3 border border-orange-500/20 mt-3">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[10px] uppercase tracking-wider text-orange-400 font-bold flex items-center space-x-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-orange-400 pulse-dot"></span>
+            <span>Analisis Orion</span>
+          </span>
+          <span id="activePosIndicator" class="badge-pill">Posisi: 0</span>
+        </div>
+        <p id="ai-status-text" class="text-xs text-gray-300 italic leading-snug">Bot standby. Klik "Mulai Bot" untuk memulai.</p>
+      </div>
     </div>
 
-    <div class="grid grid-cols-3 gap-2 mt-3 text-center">
-      <div class="bg-gray-900/80 p-2 rounded-xl border border-gray-800">
-        <span class="text-[9px] text-gray-400 block font-medium">RSI (14)</span>
-        <span id="ind-rsi" class="text-xs font-bold text-amber-400">—</span>
+    <!-- Stats -->
+    <div class="grid grid-cols-2 gap-3">
+      <div class="glass-card rounded-2xl p-3.5">
+        <div class="flex items-center space-x-2 mb-1">
+          <div class="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs">📊</div>
+          <span class="text-[11px] text-gray-400 font-medium">Total Profit</span>
+        </div>
+        <span id="virtual-pnl" class="text-base font-bold text-gray-400">+$0.00</span>
+        <span id="cycleCountText" class="text-[10px] text-gray-500 block mt-0.5">Siklus: 0</span>
       </div>
-      <div class="bg-gray-900/80 p-2 rounded-xl border border-gray-800">
-        <span class="text-[9px] text-gray-400 block font-medium">EMA (20)</span>
-        <span id="ind-ema" class="text-xs font-bold text-cyan-400">—</span>
+      <div class="glass-card rounded-2xl p-3.5">
+        <div class="flex items-center space-x-2 mb-1">
+          <div class="w-6 h-6 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center text-xs">💳</div>
+          <span class="text-[11px] text-gray-400 font-medium">Saldo</span>
+        </div>
+        <div class="flex items-baseline justify-between">
+          <span id="balance-display" class="text-base font-bold text-white">$10,000</span>
+          <span id="dynamic-lot" class="text-[9px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded font-bold border border-orange-500/30">0.001</span>
+        </div>
+        <span class="text-[10px] text-orange-400 block mt-0.5">Autoscaling Lot</span>
       </div>
-      <div class="bg-gray-900/80 p-2 rounded-xl border border-gray-800">
-        <span class="text-[9px] text-gray-400 font-medium block">MACD</span>
-        <span id="ind-macd" class="text-[10px] font-bold text-indigo-400 truncate block">—</span>
+      <div class="glass-card rounded-2xl p-3.5">
+        <div class="flex items-center space-x-2 mb-1">
+          <div class="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs">🛡️</div>
+          <span class="text-[11px] text-gray-400 font-medium">Unrealized PnL</span>
+        </div>
+        <span id="floating-pnl" class="text-base font-bold text-white">$0.00</span>
+        <span class="text-[10px] text-indigo-400 block mt-0.5">Posisi aktif</span>
+      </div>
+      <div class="glass-card rounded-2xl p-3.5">
+        <div class="flex items-center space-x-2 mb-1">
+          <div class="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs">⏱️</div>
+          <span class="text-[11px] text-gray-400 font-medium">Uptime</span>
+        </div>
+        <span id="botUptime" class="text-sm font-bold text-white">0j 0m</span>
+        <span class="text-[10px] text-purple-400 block mt-0.5">Loop 180s</span>
       </div>
     </div>
 
-    <div class="bg-gray-900/90 rounded-xl p-3 border border-orange-500/20 mt-3">
-      <div class="flex items-center justify-between mb-1">
-        <span class="text-[10px] uppercase tracking-wider text-orange-400 font-bold flex items-center space-x-1">
-          <span class="w-1.5 h-1.5 rounded-full bg-orange-400 pulse-dot"></span>
-          <span>Analisis Orion</span>
-        </span>
-        <span id="activePosIndicator" class="badge-pill">Posisi: 0</span>
+    <!-- Active Trades -->
+    <div id="activeTradesCard" class="glass-card rounded-2xl p-4 hidden">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="font-bold text-sm text-white">📌 Posisi Aktif</h3>
+        <span id="activeTradesCount" class="text-[10px] font-bold bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full border border-orange-500/30">0</span>
       </div>
-      <p id="ai-status-text" class="text-xs text-gray-300 italic leading-snug">Bot standby. Klik "Mulai Bot" untuk memulai.</p>
+      <div id="activeTradesList" class="space-y-2"></div>
     </div>
+
+    <!-- History -->
+    <div class="glass-card rounded-2xl p-4">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="font-bold text-sm text-white">⚡ Aktivitas Transaksi</h3>
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] text-orange-400 flex items-center space-x-1 bg-orange-500/10 px-2 py-0.5 rounded-full border border-orange-500/20">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot"></span>
+            <span id="liveIndicator">Standby</span>
+          </span>
+        </div>
+      </div>
+      <div class="max-h-56 overflow-y-auto pr-1 no-scrollbar">
+        <table class="w-full text-[10px]">
+          <thead class="text-gray-500">
+            <tr class="border-b border-gray-800">
+              <th class="text-left py-1 px-2">Waktu</th>
+              <th class="text-left py-1 px-2">Tipe</th>
+              <th class="text-left py-1 px-2">Harga</th>
+              <th class="text-left py-1 px-2">PnL</th>
+              <th class="text-left py-1 px-2">Saldo</th>
+            </tr>
+          </thead>
+          <tbody id="history-table-body">
+            <tr><td colspan="5" class="py-3 text-center text-gray-500 italic">Belum ada riwayat transaksi.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Market Memory -->
+    <div class="glass-card rounded-2xl p-4">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="font-bold text-sm text-white">🧠 Memori Keputusan AI</h3>
+        <span id="memoryCount" class="text-[10px] text-gray-400">0/10</span>
+      </div>
+      <div id="marketMemoryList" class="space-y-1.5 max-h-52 overflow-y-auto pr-1 no-scrollbar">
+        <p class="text-xs text-gray-500 text-center py-4">Belum ada memori.</p>
+      </div>
+    </div>
+
   </div>
 
-  <!-- Stats -->
-  <div class="grid grid-cols-2 gap-3">
-    <div class="glass-card rounded-2xl p-3.5">
-      <div class="flex items-center space-x-2 mb-1">
-        <div class="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs">📊</div>
-        <span class="text-[11px] text-gray-400 font-medium">Total Profit</span>
+  <!-- ==================== TAB: SIGNALS ==================== -->
+  <div id="tab-signals" class="tab-content hidden space-y-4">
+
+    <!-- Ensemble Voting -->
+    <div class="glass-card rounded-2xl p-4">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="font-bold text-sm text-white">🎯 Ensemble Voting</h3>
+        <span id="ensembleConsensus" class="text-[10px] font-bold bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full border border-gray-700">—</span>
       </div>
-      <span id="virtual-pnl" class="text-base font-bold text-gray-400">+$0.00</span>
-      <span id="cycleCountText" class="text-[10px] text-gray-500 block mt-0.5">Siklus: 0</span>
+      <div class="flex gap-2 mb-3">
+        <div class="flex-1 bg-emerald-500/10 rounded-lg p-2 text-center border border-emerald-500/20">
+          <span class="text-[9px] text-emerald-400 block font-medium">BUY SCORE</span>
+          <span id="ensembleBuyPct" class="text-sm font-bold text-emerald-400">0%</span>
+        </div>
+        <div class="flex-1 bg-red-500/10 rounded-lg p-2 text-center border border-red-500/20">
+          <span class="text-[9px] text-red-400 block font-medium">SELL SCORE</span>
+          <span id="ensembleSellPct" class="text-sm font-bold text-red-400">0%</span>
+        </div>
+      </div>
+      <div id="ensembleSignals" class="space-y-1.5"></div>
     </div>
-    <div class="glass-card rounded-2xl p-3.5">
-      <div class="flex items-center space-x-2 mb-1">
-        <div class="w-6 h-6 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center text-xs">💳</div>
-        <span class="text-[11px] text-gray-400 font-medium">Saldo</span>
+
+    <!-- Feature Score -->
+    <div class="glass-card rounded-2xl p-4">
+      <h3 class="font-bold text-sm text-white mb-3">📊 Feature Score (ML-Weighted)</h3>
+      <div class="space-y-2">
+        <div>
+          <div class="flex justify-between text-[10px] mb-1">
+            <span class="text-gray-400">Buy Score</span>
+            <span id="featureBuyScore" class="text-emerald-400 font-bold">0/100</span>
+          </div>
+          <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div id="featureBuyBar" class="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all" style="width: 0%"></div>
+          </div>
+        </div>
+        <div>
+          <div class="flex justify-between text-[10px] mb-1">
+            <span class="text-gray-400">Sell Score</span>
+            <span id="featureSellScore" class="text-red-400 font-bold">0/100</span>
+          </div>
+          <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div id="featureSellBar" class="h-full bg-gradient-to-r from-red-600 to-red-400 transition-all" style="width: 0%"></div>
+          </div>
+        </div>
       </div>
-      <div class="flex items-baseline justify-between">
-        <span id="balance-display" class="text-base font-bold text-white">$10,000</span>
-        <span id="dynamic-lot" class="text-[9px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded font-bold border border-orange-500/30">0.001</span>
-      </div>
-      <span class="text-[10px] text-orange-400 block mt-0.5">Autoscaling Lot</span>
+      <div id="featureDetails" class="mt-3 grid grid-cols-2 gap-1.5"></div>
     </div>
-    <div class="glass-card rounded-2xl p-3.5">
-      <div class="flex items-center space-x-2 mb-1">
-        <div class="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs">🛡️</div>
-        <span class="text-[11px] text-gray-400 font-medium">Unrealized PnL</span>
+
+    <!-- Multi-TF Alignment -->
+    <div class="glass-card rounded-2xl p-4">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="font-bold text-sm text-white">📈 Multi-TF Alignment</h3>
+        <span id="alignmentScore" class="text-[10px] font-bold bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full border border-orange-500/30">—</span>
       </div>
-      <span id="floating-pnl" class="text-base font-bold text-white">$0.00</span>
-      <span class="text-[10px] text-indigo-400 block mt-0.5">Posisi aktif</span>
+      <div id="alignmentDetails" class="space-y-1.5"></div>
     </div>
-    <div class="glass-card rounded-2xl p-3.5">
-      <div class="flex items-center space-x-2 mb-1">
-        <div class="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs">⏱️</div>
-        <span class="text-[11px] text-gray-400 font-medium">Uptime</span>
+
+    <!-- Order Flow -->
+    <div class="glass-card rounded-2xl p-4">
+      <h3 class="font-bold text-sm text-white mb-3">🌊 Order Flow</h3>
+      <div class="grid grid-cols-2 gap-2">
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">Order Book Imbalance</span>
+          <span id="obImbalance" class="text-xs font-bold text-white">—</span>
+        </div>
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">CVD Trend</span>
+          <span id="cvdTrend" class="text-xs font-bold text-white">—</span>
+        </div>
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">Bid Wall</span>
+          <span id="bidWall" class="text-xs font-bold text-emerald-400">—</span>
+        </div>
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">Ask Wall</span>
+          <span id="askWall" class="text-xs font-bold text-red-400">—</span>
+        </div>
       </div>
-      <span id="botUptime" class="text-sm font-bold text-white">0j 0m</span>
-      <span class="text-[10px] text-purple-400 block mt-0.5">Loop 25s</span>
     </div>
+
+    <!-- Session & Events -->
+    <div class="glass-card rounded-2xl p-4">
+      <h3 class="font-bold text-sm text-white mb-3">🕰️ Session & Event Risk</h3>
+      <div class="space-y-2">
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">Session Aktif</span>
+          <span id="currentSession" class="text-xs font-bold text-white">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">Risk Multiplier</span>
+          <span id="sessionRiskMult" class="text-xs font-bold text-orange-400">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">Event Risk</span>
+          <span id="eventRisk" class="text-xs font-bold text-white">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">Next Event</span>
+          <span id="nextEvent" class="text-[10px] font-semibold text-gray-300">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Institutional -->
+    <div class="glass-card rounded-2xl p-4">
+      <h3 class="font-bold text-sm text-white mb-3">🏦 Institutional Signals</h3>
+      <div class="grid grid-cols-2 gap-2">
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">Funding Rate</span>
+          <span id="fundingRate" class="text-xs font-bold text-white">—</span>
+        </div>
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">OI Change</span>
+          <span id="oiChange" class="text-xs font-bold text-white">—</span>
+        </div>
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">Fear & Greed</span>
+          <span id="fearGreed" class="text-xs font-bold text-white">—</span>
+        </div>
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">BTC-ETH Corr</span>
+          <span id="correlation" class="text-xs font-bold text-white">—</span>
+        </div>
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">ATR</span>
+          <span id="atrVal" class="text-xs font-bold text-white">—</span>
+        </div>
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">Regime</span>
+          <span id="regime" class="text-xs font-bold text-white">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- S/R & Divergence -->
+    <div class="glass-card rounded-2xl p-4">
+      <h3 class="font-bold text-sm text-white mb-3">🎯 S/R & Patterns</h3>
+      <div class="space-y-1.5">
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">Support</span>
+          <span id="support" class="text-xs font-bold text-emerald-400">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">Resistance</span>
+          <span id="resistance" class="text-xs font-bold text-red-400">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">RSI Divergence</span>
+          <span id="rsiDivergence" class="text-xs font-bold text-white">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">Candle Pattern</span>
+          <span id="candlePattern" class="text-xs font-bold text-white">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">Volume Ratio</span>
+          <span id="volumeRatio" class="text-xs font-bold text-white">—</span>
+        </div>
+      </div>
+    </div>
+
   </div>
 
-  <!-- Active Trades -->
-  <div id="activeTradesCard" class="glass-card rounded-2xl p-4 hidden">
-    <div class="flex justify-between items-center mb-3">
-      <h3 class="font-bold text-sm text-white">📌 Posisi Aktif</h3>
-      <span id="activeTradesCount" class="text-[10px] font-bold bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full border border-orange-500/30">0</span>
-    </div>
-    <div id="activeTradesList" class="space-y-2"></div>
-  </div>
+  <!-- ==================== TAB: ANALYTICS ==================== -->
+  <div id="tab-analytics" class="tab-content hidden space-y-4">
 
-  <!-- History -->
-  <div class="glass-card rounded-2xl p-4">
-    <div class="flex justify-between items-center mb-3">
-      <h3 class="font-bold text-sm text-white">⚡ Aktivitas Transaksi</h3>
-      <div class="flex items-center gap-2">
-        <span class="text-[11px] text-orange-400 flex items-center space-x-1 bg-orange-500/10 px-2 py-0.5 rounded-full border border-orange-500/20">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot"></span>
-          <span id="liveIndicator">Standby</span>
-        </span>
-        <button id="btn-clear-history" class="text-[10px] text-gray-400 hover:text-white">Clear</button>
+    <!-- Performance Metrics -->
+    <div class="glass-card rounded-2xl p-4">
+      <h3 class="font-bold text-sm text-white mb-3">📊 Performance Metrics</h3>
+      <div class="grid grid-cols-2 gap-2">
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">Sharpe Ratio</span>
+          <span id="metricSharpe" class="text-xs font-bold text-white">—</span>
+        </div>
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">Profit Factor</span>
+          <span id="metricPF" class="text-xs font-bold text-white">—</span>
+        </div>
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">Avg Win</span>
+          <span id="metricAvgWin" class="text-xs font-bold text-emerald-400">—</span>
+        </div>
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">Avg Loss</span>
+          <span id="metricAvgLoss" class="text-xs font-bold text-red-400">—</span>
+        </div>
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">Max Drawdown</span>
+          <span id="metricMaxDD" class="text-xs font-bold text-red-400">—</span>
+        </div>
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[9px] text-gray-400 block">Streak</span>
+          <span id="metricStreak" class="text-xs font-bold text-white">—</span>
+        </div>
       </div>
     </div>
-    <div class="max-h-56 overflow-y-auto pr-1 no-scrollbar">
-      <table class="w-full text-[10px]">
-        <thead class="text-gray-500">
-          <tr class="border-b border-gray-800">
-            <th class="text-left py-1 px-2">Waktu</th>
-            <th class="text-left py-1 px-2">Tipe</th>
-            <th class="text-left py-1 px-2">Harga</th>
-            <th class="text-left py-1 px-2">PnL</th>
-            <th class="text-left py-1 px-2">Saldo</th>
-          </tr>
-        </thead>
-        <tbody id="history-table-body">
-          <tr><td colspan="5" class="py-3 text-center text-gray-500 italic">Belum ada riwayat transaksi.</td></tr>
-        </tbody>
-      </table>
+
+    <!-- Dynamic Params (Auto-Tuned) -->
+    <div class="glass-card rounded-2xl p-4">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="font-bold text-sm text-white">⚙️ Auto-Tuned Parameters</h3>
+        <span id="paramsStatus" class="text-[9px] text-gray-500">bot menyesuaikan diri</span>
+      </div>
+      <div class="space-y-1.5">
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">Min Alignment</span>
+          <span id="paramMinAlign" class="text-xs font-bold text-orange-400">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">Min Confidence</span>
+          <span id="paramMinConf" class="text-xs font-bold text-orange-400">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">Kelly Fraction</span>
+          <span id="paramKelly" class="text-xs font-bold text-orange-400">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">ATR TP Multiplier</span>
+          <span id="paramTpMult" class="text-xs font-bold text-orange-400">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">ATR SL Multiplier</span>
+          <span id="paramSlMult" class="text-xs font-bold text-orange-400">—</span>
+        </div>
+      </div>
     </div>
+
+    <!-- Confidence Calibration -->
+    <div class="glass-card rounded-2xl p-4">
+      <h3 class="font-bold text-sm text-white mb-3">🎚️ Confidence Calibration</h3>
+      <div class="space-y-2">
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <div class="flex justify-between items-center">
+            <span class="text-[10px] text-gray-400">Low (0.4-0.6)</span>
+            <span id="calibLow" class="text-xs font-bold text-gray-300">—</span>
+          </div>
+        </div>
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <div class="flex justify-between items-center">
+            <span class="text-[10px] text-gray-400">Mid (0.6-0.75)</span>
+            <span id="calibMid" class="text-xs font-bold text-amber-400">—</span>
+          </div>
+        </div>
+        <div class="bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <div class="flex justify-between items-center">
+            <span class="text-[10px] text-gray-400">High (0.75+)</span>
+            <span id="calibHigh" class="text-xs font-bold text-emerald-400">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Best Patterns (Self-Learning) -->
+    <div class="glass-card rounded-2xl p-4">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="font-bold text-sm text-white">🏆 Best Patterns</h3>
+        <span id="patternCount" class="text-[10px] text-gray-500">0 patterns</span>
+      </div>
+      <div id="bestPatternsList" class="space-y-1.5">
+        <p class="text-xs text-gray-500 text-center py-4">Belum ada data.</p>
+      </div>
+    </div>
+
+    <!-- Session & Regime Performance -->
+    <div class="glass-card rounded-2xl p-4">
+      <h3 class="font-bold text-sm text-white mb-3">📅 Performance by Session & Regime</h3>
+      <div class="space-y-1.5">
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">🇦🇸 ASIA</span>
+          <span id="sessionAsia" class="text-xs font-bold text-white">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">🇬🇧 LONDON</span>
+          <span id="sessionLondon" class="text-xs font-bold text-white">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-gray-900/70 rounded-lg p-2 border border-gray-800">
+          <span class="text-[10px] text-gray-400">🇺🇸 NY</span>
+          <span id="sessionNY" class="text-xs font-bold text-white">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ensemble Stats -->
+    <div class="glass-card rounded-2xl p-4">
+      <h3 class="font-bold text-sm text-white mb-3">🎯 Ensemble Strategy Stats</h3>
+      <div id="ensembleStatsList" class="space-y-1.5"></div>
+    </div>
+
+    <!-- Backtest -->
+    <div class="glass-card rounded-2xl p-4">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="font-bold text-sm text-white">🧪 Backtest</h3>
+      </div>
+      <div class="flex gap-2 mb-3">
+        <button onclick="runBacktest('15m', 500)" class="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition">Run 15m / 500</button>
+        <button onclick="runBacktest('1h', 300)" class="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition">Run 1h / 300</button>
+      </div>
+      <div id="backtestResult" class="text-[10px] text-gray-400 text-center py-2">
+        Klik tombol untuk test strategi di data historis
+      </div>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="glass-card rounded-2xl p-4 border border-red-500/20">
+      <h3 class="font-bold text-sm text-red-400 mb-3">⚠️ Danger Zone</h3>
+      <button onclick="resetBot()" class="w-full py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-lg transition">Reset Bot ke $10,000</button>
+    </div>
+
   </div>
 
-  <!-- Market Memory -->
-  <div class="glass-card rounded-2xl p-4">
-    <div class="flex justify-between items-center mb-3">
-      <h3 class="font-bold text-sm text-white">🧠 Memori Keputusan AI</h3>
-      <span id="memoryCount" class="text-[10px] text-gray-400">0/10</span>
-    </div>
-    <div id="marketMemoryList" class="space-y-1.5 max-h-52 overflow-y-auto pr-1 no-scrollbar">
-      <p class="text-xs text-gray-500 text-center py-4">Belum ada memori.</p>
-    </div>
-  </div>
-
+  <!-- Footer -->
   <div class="text-center text-[10px] text-gray-600 pb-2">
-    <p>Orion AI • Last update: <span id="lastUpdate">—</span></p>
+    <p>Orion v5 • Last update: <span id="lastUpdate">—</span></p>
   </div>
 </main>
 
 <!-- Bottom Nav -->
 <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto glass-card border-t border-gray-800/80 px-4 py-2.5 flex justify-around items-center z-40 rounded-t-2xl shadow-2xl">
-  <button class="nav-btn nav-btn-active">
+  <button class="nav-btn nav-btn-active" data-tab="trading">
     <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
-    <span class="text-[10px] font-bold">Beranda</span>
+    <span class="text-[10px] font-bold">Trading</span>
   </button>
-  <button class="nav-btn">
-    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
-    <span class="text-[10px] font-medium">Pasar</span>
+  <button class="nav-btn" data-tab="signals">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+    <span class="text-[10px] font-medium">Signals</span>
   </button>
-  <button class="nav-btn">
-    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
-    <span class="text-[10px] font-medium">Bot</span>
-  </button>
-  <button class="nav-btn">
-    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
-    <span class="text-[10px] font-medium">Portofolio</span>
-  </button>
-  <button class="nav-btn">
-    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-    <span class="text-[10px] font-medium">Profil</span>
+  <button class="nav-btn" data-tab="analytics">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+    <span class="text-[10px] font-medium">Analytics</span>
   </button>
 </nav>
 
