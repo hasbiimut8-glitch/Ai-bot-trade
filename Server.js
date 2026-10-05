@@ -9,26 +9,28 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // ================== CONFIG ==================
-const OPENROUTER_KEY = process.env.OPENROUTER_KEY;
-
-// Di callSingleModel, ganti URL dan headers:
-const url = 'https://openrouter.ai/api/v1/chat/completions';
-headers: {
-  'Authorization': `Bearer ${OPENROUTER_KEY}`,
-  'Content-Type': 'application/json',
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+if (!OPENROUTER_API_KEY) {
+  console.error("FATAL: OPENROUTER_API_KEY tidak diset.");
+  process.exit(1);
 }
-body: JSON.stringify({
-  model: 'google/gemini-2.5-flash',   // atau model lain
-  messages: [{ role: 'user', content: systemPrompt }],
-  response_format: { type: 'json_object' },
-})
+
+const OPENROUTER_API_BASE = 'https://openrouter.ai/api/v1';
+const APP_URL = process.env.APP_URL || 'https://railway.app';
+const APP_TITLE = 'Orion AI Trading Bot';
+
 const SYMBOL = 'BTCUSDT';
 const ETH_SYMBOL = 'ETHUSDT';
 const DISPLAY = 'BTC/USDT';
 
-// Model utama & fallback
-const GEMINI_MODELS_PRIMARY = ['gemini-3.8-flash'];
-const GEMINI_MODELS_FALLBACK = ['gemini-2.0-flash'];
+// 🔥 Model OpenRouter — pakai versi gratis dulu
+const OPENROUTER_MODELS_PRIMARY = [
+  'google/gemini-2.5-flash-preview',
+];
+const OPENROUTER_MODELS_FALLBACK = [
+  'google/gemini-2.0-flash-exp:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
+];
 
 const ENABLE_LIVE_BROKER = process.env.ENABLE_LIVE_BROKER === 'true';
 const META_API_TOKEN = process.env.META_API_TOKEN || '';
@@ -46,7 +48,7 @@ if (ENABLE_LIVE_BROKER && (!META_API_TOKEN || !META_ACCOUNT_ID)) {
 }
 
 // ================== STRATEGI ==================
-const LOOP_INTERVAL_MS = 600000;   // 10 menit (hemat kuota)
+const LOOP_INTERVAL_MS = 600000;
 
 const MAX_ACTIVE_TRADES = 4;
 const MAX_PRICE_HISTORY = 100;
@@ -102,12 +104,8 @@ const HIGH_IMPACT_EVENTS = [];
 
 // ================== QUOTA MANAGEMENT ==================
 let geminiCache = {
-  decision: null,
-  price: 0,
-  regime: '',
-  rsiBand: '',
-  alignmentBand: '',
-  timestamp: 0
+  decision: null, price: 0, regime: '',
+  rsiBand: '', alignmentBand: '', timestamp: 0
 };
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const CACHE_PRICE_THRESHOLD = 0.003;
@@ -178,8 +176,7 @@ let lastBacktest = null;
 
 let marketContext = {
   atr: null, atrPct: null,
-  htfTrend: 'unknown', htfChangePct: 0,
-  htf1hTrend: 'unknown',
+  htfTrend: 'unknown', htfChangePct: 0, htf1hTrend: 'unknown',
   volumeRatio: null,
   bbUpper: null, bbLower: null, bbMiddle: null, bbWidth: null, bbPosition: null,
   support: null, resistance: null,
@@ -992,7 +989,7 @@ function setCloseEvent(pnl, source) {
     type: isProfit ? 'PROFIT' : 'LOSS',
     pnl: parseFloat(pnl.toFixed(2)),
     message: isProfit ? 'Horee!!! Berhasil profit' : 'Yaah!! Gagal nih aku coba lagi ya',
-    source: source || 'GEMINI', timestamp: Date.now()
+    source: source || 'AI', timestamp: Date.now()
   };
 }
 
@@ -1159,7 +1156,7 @@ function handle429() {
   quotaCooldown.active = true;
   quotaCooldown.until = Date.now() + duration;
   console.warn(`[Quota] Kena 429! Cooldown ${duration / 60000} menit (hit #${quotaCooldown.hits})`);
-  sendTelegram(`⚠️ <b>Gemini quota habis</b>\nCooldown ${duration / 60000} menit.`);
+  sendTelegram(`⚠️ <b>OpenRouter quota habis</b>\nCooldown ${duration / 60000} menit.`);
 }
 
 function rsiBand(rsi) {
@@ -1187,39 +1184,43 @@ function shouldSkipGemini(currentPrice, rsiValue, alignmentScore, regime) {
   return true;
 }
 
-// ================== GEMINI CALL (REST API — BYPASS SDK) ==================
-async function callSingleModel(modelName, systemPrompt, attempts = 1) {
+// ================== OPENROUTER CALL ==================
+async function callOpenRouterModel(modelName, systemPrompt, attempts = 1) {
   const guard = canCallGemini();
   if (!guard.ok) {
-    console.warn(`[Gemini] Skip: ${guard.reason}`);
+    console.warn(`[OpenRouter] Skip: ${guard.reason}`);
     return { ok: false, error: new Error(guard.reason), quotaBlocked: true };
   }
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
       trackGeminiCall();
-      const url = `${GEMINI_API_BASE}/models/${modelName}:generateContent`;
+      const url = `${OPENROUTER_API_BASE}/chat/completions`;
 
       const response = await fetch(url, {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
           'Content-Type': 'application/json',
-          'x-goog-api-key': GEMINI_API_KEY,
+          'HTTP-Referer': APP_URL,
+          'X-OpenRouter-Title': APP_TITLE,
         },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: systemPrompt }] }],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature: 0.4,
-          },
+          model: modelName,
+          messages: [
+            { role: 'user', content: systemPrompt }
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.4,
+          max_tokens: 500,
         }),
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(45000),
       });
 
       if (!response.ok) {
         const errText = await response.text();
-        const errMsg = `HTTP ${response.status}: ${errText.slice(0, 200)}`;
-        console.warn(`[Gemini REST][${modelName}][a${attempt}] ${errMsg}`);
+        const errMsg = `HTTP ${response.status}: ${errText.slice(0, 250)}`;
+        console.warn(`[OpenRouter][${modelName}][a${attempt}] ${errMsg}`);
 
         if (response.status === 429) {
           handle429();
@@ -1228,7 +1229,7 @@ async function callSingleModel(modelName, systemPrompt, attempts = 1) {
         if (response.status === 401 || response.status === 403) {
           return { ok: false, error: new Error(errMsg), authError: true };
         }
-        if (response.status === 503 || response.status === 500) {
+        if (response.status === 503 || response.status === 500 || response.status === 502) {
           if (attempt < attempts) {
             await new Promise(r => setTimeout(r, 3000));
             continue;
@@ -1242,17 +1243,23 @@ async function callSingleModel(modelName, systemPrompt, attempts = 1) {
       }
 
       const data = await response.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const text = data?.choices?.[0]?.message?.content;
+
       if (text) {
         const cleaned = text.replace(/```json|```/g, '').trim();
-        const parsed = JSON.parse(cleaned);
-        if (parsed && typeof parsed.action === 'string') {
-          return { ok: true, decision: parsed };
+        try {
+          const parsed = JSON.parse(cleaned);
+          if (parsed && typeof parsed.action === 'string') {
+            return { ok: true, decision: parsed };
+          }
+        } catch (parseErr) {
+          console.warn(`[OpenRouter][${modelName}] JSON parse gagal: ${cleaned.slice(0, 150)}`);
+          return { ok: false, error: new Error('JSON parse gagal') };
         }
       }
-      return { ok: false, error: new Error('Respons tidak valid') };
+      return { ok: false, error: new Error('Respons kosong') };
     } catch (e) {
-      console.warn(`[Gemini REST][${modelName}][a${attempt}] ${e.message}`);
+      console.warn(`[OpenRouter][${modelName}][a${attempt}] ${e.message}`);
       if (attempt >= attempts) return { ok: false, error: e };
       await new Promise(r => setTimeout(r, 2000));
     }
@@ -1260,18 +1267,19 @@ async function callSingleModel(modelName, systemPrompt, attempts = 1) {
   return { ok: false };
 }
 
-async function callGeminiSingle(systemPrompt) {
-  const primary = await callSingleModel(GEMINI_MODELS_PRIMARY[0], systemPrompt, 1);
-  if (primary.ok) { geminiSuccessCount++; return { ok: true, decision: primary.decision, model: GEMINI_MODELS_PRIMARY[0] }; }
-
-  if (primary.quotaExceeded || primary.quotaBlocked) {
-    geminiFailCount++;
-    return { ok: false, quotaExceeded: true };
+async function callAI(systemPrompt) {
+  // Coba model utama
+  for (const model of OPENROUTER_MODELS_PRIMARY) {
+    const res = await callOpenRouterModel(model, systemPrompt, 1);
+    if (res.ok) { geminiSuccessCount++; return { ok: true, decision: res.decision, model }; }
+    if (res.quotaExceeded || res.quotaBlocked) { geminiFailCount++; return { ok: false, quotaExceeded: true }; }
   }
 
-  if (primary.modelUnavailable && GEMINI_MODELS_FALLBACK.length > 0) {
-    const fb = await callSingleModel(GEMINI_MODELS_FALLBACK[0], systemPrompt, 1);
-    if (fb.ok) { geminiSuccessCount++; return { ok: true, decision: fb.decision, model: GEMINI_MODELS_FALLBACK[0] }; }
+  // Coba fallback models
+  for (const model of OPENROUTER_MODELS_FALLBACK) {
+    const res = await callOpenRouterModel(model, systemPrompt, 1);
+    if (res.ok) { geminiSuccessCount++; return { ok: true, decision: res.decision, model }; }
+    if (res.quotaExceeded || res.quotaBlocked) { geminiFailCount++; return { ok: false, quotaExceeded: true }; }
   }
 
   geminiFailCount++;
@@ -1397,20 +1405,20 @@ async function runAutonomousAgent() {
     let agentDecision = { action: 'HOLD', reasoning: 'Menunggu...', confidence: 0 };
     let consensus = 'N/A';
 
-    const skipGemini = shouldSkipGemini(currentPrice, rsiValue, alignScore, marketContext.regime);
+    const skipAI = shouldSkipGemini(currentPrice, rsiValue, alignScore, marketContext.regime);
 
-    if (skipGemini) {
+    if (skipAI) {
       agentDecision = geminiCache.decision;
       consensus = 'CACHED';
       geminiSkipCount++;
-      console.log(`[Cache] Skip Gemini — kondisi hampir sama (${Math.round((Date.now() - geminiCache.timestamp) / 1000)}s lalu)`);
+      console.log(`[Cache] Skip AI — kondisi hampir sama (${Math.round((Date.now() - geminiCache.timestamp) / 1000)}s lalu)`);
     } else {
       const guard = canCallGemini();
       if (!guard.ok) {
         agentDecision = fallbackDecision(currentPrice, rsiValue, macdText, rsiText, ensemble);
         lastGeminiStatus = 'quota-blocked';
         consensus = 'QUOTA-FALLBACK';
-        console.log(`[Quota] Skip Gemini: ${guard.reason}`);
+        console.log(`[Quota] Skip AI: ${guard.reason}`);
       } else {
         const systemPrompt = `
 Kamu "Orion v5" - AI Trading Agent BTC (${DISPLAY}) INSTITUTIONAL.
@@ -1427,42 +1435,37 @@ Harga: $${currentPrice.toFixed(2)}
 RSI: ${rsiText} | EMA: ${emaTrend} | MACD: ${macdText}
 BB pos: ${marketContext.bbPosition != null ? (marketContext.bbPosition * 100).toFixed(0) + '%' : 'N/A'}
 Alignment: ${alignScore ?? 'N/A'}/100 (${marketContext.dominantDirection})
-${marketContext.alignmentDetails ? Object.entries(marketContext.alignmentDetails).map(([tf, d]) => `  ${tf}: ${d.trend} (rsi:${d.rsi})`).join('\n') : ''}
 OrderBook: ${marketContext.orderBookImbalance != null ? (marketContext.orderBookImbalance * 100).toFixed(1) + '%' : 'N/A'}
 CVD: ${marketContext.cvdTrend}
 ATR: $${marketContext.atr ? marketContext.atr.toFixed(2) : 'N/A'}
 Regime: ${marketContext.regime}
 Vol ratio: ${marketContext.volumeRatio ? marketContext.volumeRatio.toFixed(2) + '×' : 'N/A'}
 Divergence: ${marketContext.rsiDivergence} | Candle: ${marketContext.candlePattern}
-Session: ${session} (risk ×${sessionParams.riskMult})
+Session: ${session}
 S/R: $${marketContext.support?.toFixed(2) ?? 'N/A'} / $${marketContext.resistance?.toFixed(2) ?? 'N/A'}
 Funding: ${marketContext.fundingRate != null ? (marketContext.fundingRate * 100).toFixed(4) + '%' : 'N/A'}
-OI chg: ${marketContext.oiChangePct != null ? (marketContext.oiChangePct * 100).toFixed(2) + '%' : 'N/A'}
-F&G: ${marketContext.fearGreed ?? 'N/A'} (${marketContext.fearGreedLabel})
-HTF 15m: ${marketContext.htfTrend} | 1h: ${marketContext.htf1hTrend}
-Event risk: ${marketContext.eventRiskLevel}
+F&G: ${marketContext.fearGreed ?? 'N/A'}
 
 ═══════ AKUN ═══════
 Saldo: $${virtualBalance.toFixed(2)} | Posisi: ${activeTrades.length}/${MAX_ACTIVE_TRADES}
-Daily PnL: $${dailyPnl.toFixed(2)} | Fee: $${cumulativeFee.toFixed(2)}
-Winrate: ${winRateText} | Sharpe: ${metrics.sharpe ?? 'N/A'}
+Winrate: ${winRateText}
 
-═══════ ATURAN (KETAT) ═══════
+═══════ ATURAN ═══════
 1. Ada posisi → "HOLD"
-2. Entry hanya jika SEMUA terpenuhi:
-   ✅ BUY: ens=BUY + feat≥65 + align≥${dynamicParams.minAlignment} BULL + HTF 15m UP/FLAT + 1h≠DOWN + RSI 30-55 + BB<0.7 + vol>0.7 + CVD buying/neutral + Funding<0.10% + F&G<75 + session OK + event≠HIGH
-   ✅ SELL: ens=SELL + feat≥65 + align≥${dynamicParams.minAlignment} BEAR + HTF 15m DOWN/FLAT + 1h≠UP + RSI 45-70 + BB>0.3 + vol>0.7 + CVD selling/neutral + Funding>-0.05% + F&G>25
+2. Entry hanya jika:
+   ✅ BUY: ens=BUY + feat≥65 + align≥${dynamicParams.minAlignment} BULL + HTF UP/FLAT + RSI 30-55 + BB<0.7
+   ✅ SELL: ens=SELL + feat≥65 + align≥${dynamicParams.minAlignment} BEAR + HTF DOWN/FLAT + RSI 45-70 + BB>0.3
 3. RAGU → HOLD
 
-Balas JSON: {"action":"BUY"|"SELL"|"HOLD"|"CLOSE","confidence":0.85,"reasoning":"..."}
+Balas HANYA JSON: {"action":"BUY"|"SELL"|"HOLD"|"CLOSE","confidence":0.85,"reasoning":"..."}
 `;
 
-        const geminiResult = await callGeminiSingle(systemPrompt);
+        const aiResult = await callAI(systemPrompt);
 
-        if (geminiResult.ok) {
-          agentDecision = geminiResult.decision;
+        if (aiResult.ok) {
+          agentDecision = aiResult.decision;
           consensus = 'AI';
-          lastGeminiStatus = `ok/${geminiResult.model}`;
+          lastGeminiStatus = `ok/${aiResult.model}`;
           geminiCache = {
             decision: agentDecision, price: currentPrice,
             regime: marketContext.regime,
@@ -1471,7 +1474,7 @@ Balas JSON: {"action":"BUY"|"SELL"|"HOLD"|"CLOSE","confidence":0.85,"reasoning":
             timestamp: Date.now()
           };
         } else {
-          console.warn('[Gemini] Gagal → fallback');
+          console.warn('[OpenRouter] Gagal → fallback');
           agentDecision = fallbackDecision(currentPrice, rsiValue, macdText, rsiText, ensemble);
           lastGeminiStatus = 'fallback';
           consensus = 'FALLBACK';
@@ -1525,7 +1528,7 @@ Balas JSON: {"action":"BUY"|"SELL"|"HOLD"|"CLOSE","confidence":0.85,"reasoning":
         activeTrades = activeTrades.filter(t => !closedTrades.includes(t));
         tradeHistory.unshift({
           time: new Date().toLocaleTimeString('id-ID'),
-          type: `GEMINI CLOSE ${closedCount}x (${closeTotalPnl >= 0 ? 'PROFIT' : 'LOSS'})`,
+          type: `AI CLOSE ${closedCount}x (${closeTotalPnl >= 0 ? 'PROFIT' : 'LOSS'})`,
           open: closedTrades[0].entryPrice.toFixed(2), close: currentPrice.toFixed(2),
           pnl: closeTotalPnl, balanceAfter: virtualBalance
         });
@@ -1533,7 +1536,7 @@ Balas JSON: {"action":"BUY"|"SELL"|"HOLD"|"CLOSE","confidence":0.85,"reasoning":
           price: currentPrice, rsi: rsiValue, ema: ema20Value, macdStatus: macdText,
           decision: 'CLOSE', reasoning: agentDecision.reasoning, pnl: closeTotalPnl
         });
-        setCloseEvent(closeTotalPnl, 'GEMINI');
+        setCloseEvent(closeTotalPnl, 'AI');
         tuneParameters();
       }
     } else if ((agentDecision.action === 'BUY' || agentDecision.action === 'SELL') && activeTrades.length === 0) {
@@ -1731,7 +1734,7 @@ app.get('/api/start-bot', requireAuth, async (req, res) => {
     if (botInterval) clearInterval(botInterval);
     botInterval = setInterval(runAutonomousAgent, LOOP_INTERVAL_MS);
   }
-  res.json({ success: true, message: 'Orion v5 aktif (REST API).' });
+  res.json({ success: true, message: 'Orion v5 aktif (OpenRouter).' });
 });
 
 app.get('/api/stop-bot', requireAuth, (req, res) => {
@@ -1778,25 +1781,28 @@ app.get('/api/reset-quota', requireAuth, (req, res) => {
   res.json({ success: true, message: 'Quota cooldown direset.' });
 });
 
-// Test endpoint — verifikasi API key
-app.get('/api/test-gemini', requireAuth, async (req, res) => {
+// 🔥 Test endpoint OpenRouter
+app.get('/api/test-ai', requireAuth, async (req, res) => {
   try {
-    const url = `${GEMINI_API_BASE}/models/${GEMINI_MODELS_PRIMARY[0]}:generateContent`;
+    const url = `${OPENROUTER_API_BASE}/chat/completions`;
     const response = await fetch(url, {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
-        'x-goog-api-key': GEMINI_API_KEY,
+        'HTTP-Referer': APP_URL,
+        'X-OpenRouter-Title': APP_TITLE,
       },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: 'Balas dengan JSON: {"action":"HOLD","confidence":0.5,"reasoning":"test"}' }] }],
-        generationConfig: { responseMimeType: 'application/json' },
+        model: OPENROUTER_MODELS_PRIMARY[0],
+        messages: [{ role: 'user', content: 'Balas JSON: {"action":"HOLD","confidence":0.5,"reasoning":"test ok"}' }],
+        response_format: { type: 'json_object' },
       }),
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(30000),
     });
     const status = response.status;
     const text = await response.text();
-    res.json({ success: response.ok, status, response: text.slice(0, 500) });
+    res.json({ success: response.ok, status, response: text.slice(0, 600) });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -1882,14 +1888,13 @@ process.on('SIGINT', () => {
 
 app.listen(port, () => {
   console.log(`═══════════════════════════════════════════════`);
-  console.log(`  Orion v5 — REST API MODE (bypass SDK bug)`);
+  console.log(`  Orion v5 — OPENROUTER MODE`);
   console.log(`═══════════════════════════════════════════════`);
   console.log(`Loop: ${LOOP_INTERVAL_MS / 60000} menit`);
-  console.log(`Gemini endpoint: ${GEMINI_API_BASE}`);
-  console.log(`Model utama: ${GEMINI_MODELS_PRIMARY.join(', ')}`);
-  console.log(`Fallback: ${GEMINI_MODELS_FALLBACK.join(', ')}`);
+  console.log(`OpenRouter: ${OPENROUTER_API_BASE}`);
+  console.log(`Model utama: ${OPENROUTER_MODELS_PRIMARY.join(', ')}`);
+  console.log(`Fallback: ${OPENROUTER_MODELS_FALLBACK.join(', ')}`);
   console.log(`Daily request limit: ${DAILY_REQUEST_LIMIT}`);
-  console.log(`Hourly rate limit: ${MAX_REQUESTS_PER_HOUR}`);
   console.log(`Cache TTL: ${CACHE_TTL_MS / 60000} menit`);
   console.log(`Live broker: ${ENABLE_LIVE_BROKER ? '⚠️ AKTIF' : 'simulasi'}`);
   console.log(`Telegram: ${TELEGRAM_ENABLED ? '✅' : '❌'}`);
