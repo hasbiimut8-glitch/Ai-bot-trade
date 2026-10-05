@@ -1,5 +1,4 @@
 import express from 'express';
-import { GoogleGenAI } from '@google/genai';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -13,17 +12,14 @@ const port = process.env.PORT || 3000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 if (!GEMINI_API_KEY) { console.error("FATAL: GEMINI_API_KEY tidak diset."); process.exit(1); }
 
-const ai = new GoogleGenAI({
-  apiKey: GEMINI_API_KEY,
-  apiVersion: 'v1',
-  httpOptions: { headers: { 'x-goog-api-key': GEMINI_API_KEY } },
-});
+// 🔥 REST API LANGSUNG — bypass bug SDK AQ. key
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
 const SYMBOL = 'BTCUSDT';
 const ETH_SYMBOL = 'ETHUSDT';
 const DISPLAY = 'BTC/USDT';
 
-// ⚠️ KURANGI jadi 1 model utama saja (hemat 50%)
+// Model utama & fallback
 const GEMINI_MODELS_PRIMARY = ['gemini-3.8-flash'];
 const GEMINI_MODELS_FALLBACK = ['gemini-2.0-flash'];
 
@@ -43,8 +39,7 @@ if (ENABLE_LIVE_BROKER && (!META_API_TOKEN || !META_ACCOUNT_ID)) {
 }
 
 // ================== STRATEGI ==================
-// ⚠️ Loop 10 MENIT (bukan 3 menit) — 6x lebih hemat kuota
-const LOOP_INTERVAL_MS = 600000;
+const LOOP_INTERVAL_MS = 600000;   // 10 menit (hemat kuota)
 
 const MAX_ACTIVE_TRADES = 4;
 const MAX_PRICE_HISTORY = 100;
@@ -99,33 +94,26 @@ const SCALE_IN_DELAY_MS = 2000;
 const HIGH_IMPACT_EVENTS = [];
 
 // ================== QUOTA MANAGEMENT ==================
-// ⚠️ SMART CACHING: skip Gemini kalau kondisi hampir sama
 let geminiCache = {
   decision: null,
   price: 0,
   regime: '',
-  rsiBand: '',       // 'low' | 'mid' | 'high'
-  alignmentBand: '', // 'low' | 'mid' | 'high'
+  rsiBand: '',
+  alignmentBand: '',
   timestamp: 0
 };
-const CACHE_TTL_MS = 10 * 60 * 1000;         // Cache valid 10 menit
-const CACHE_PRICE_THRESHOLD = 0.003;         // Skip kalau harga gerak <0.3%
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const CACHE_PRICE_THRESHOLD = 0.003;
 
-// ⚠️ QUOTA COOLDOWN: kalau kena 429, istirahat
-let quotaCooldown = {
-  active: false,
-  until: 0,
-  hits: 0
-};
-const COOLDOWN_AFTER_429_MS = 30 * 60 * 1000; // Cooldown 30 menit setelah 429
-const COOLDOWN_AFTER_429_HITS_2_MS = 60 * 60 * 1000; // 1 jam kalau kena 2x
-const COOLDOWN_AFTER_429_HITS_3_MS = 3 * 60 * 60 * 1000; // 3 jam kalau kena 3x
+let quotaCooldown = { active: false, until: 0, hits: 0 };
+const COOLDOWN_AFTER_429_MS = 30 * 60 * 1000;
+const COOLDOWN_AFTER_429_HITS_2_MS = 60 * 60 * 1000;
+const COOLDOWN_AFTER_429_HITS_3_MS = 3 * 60 * 60 * 1000;
 
 let dailyGeminiRequests = 0;
 let dailyGeminiRequestsDate = new Date().toDateString();
-const DAILY_REQUEST_LIMIT = 1200;            // Target maksimum per hari
-const MAX_REQUESTS_PER_HOUR = 60;            // Batas aman per jam
-
+const DAILY_REQUEST_LIMIT = 1200;
+const MAX_REQUESTS_PER_HOUR = 60;
 let hourlyRequests = [];
 
 // ================== STATE ==================
@@ -146,7 +134,7 @@ let cumulativeFee = 0;
 let cumulativeTrades = 0;
 let geminiSuccessCount = 0;
 let geminiFailCount = 0;
-let geminiSkipCount = 0;      // berapa kali skip karena cache
+let geminiSkipCount = 0;
 
 let consecutiveLosses = 0;
 let consecutiveWins = 0;
@@ -1006,7 +994,6 @@ function checkDailyReset() {
   if (today !== dailyStartDate) {
     dailyStartDate = today; dailyStartBalance = virtualBalance; dailyPnl = 0; dailyTrades = 0;
   }
-  // Reset daily Gemini counter
   if (today !== dailyGeminiRequestsDate) {
     dailyGeminiRequestsDate = today;
     dailyGeminiRequests = 0;
@@ -1130,27 +1117,23 @@ async function checkStopLossTakeProfit(currentPrice) {
   return { closed: anyClosed, pnl: closedPnl, count: closedCount };
 }
 
-// ================== QUOTA MANAGEMENT HELPERS ==================
+// ================== QUOTA MANAGEMENT ==================
 function canCallGemini() {
-  // Cek cooldown
   if (quotaCooldown.active && Date.now() < quotaCooldown.until) {
     return { ok: false, reason: `cooldown until ${new Date(quotaCooldown.until).toLocaleTimeString('id-ID')}` };
   }
-  // Cooldown selesai → reset
   if (quotaCooldown.active && Date.now() >= quotaCooldown.until) {
-    console.log('[Quota] Cooldown selesai, coba lagi.');
+    console.log('[Quota] Cooldown selesai.');
     quotaCooldown.active = false;
     quotaCooldown.hits = 0;
   }
-  // Cek daily limit
   if (dailyGeminiRequests >= DAILY_REQUEST_LIMIT) {
-    return { ok: false, reason: `daily limit ${DAILY_REQUEST_LIMIT} reached` };
+    return { ok: false, reason: `daily limit ${DAILY_REQUEST_LIMIT}` };
   }
-  // Cek hourly rate
   const oneHourAgo = Date.now() - 3600000;
   hourlyRequests = hourlyRequests.filter(t => t > oneHourAgo);
   if (hourlyRequests.length >= MAX_REQUESTS_PER_HOUR) {
-    return { ok: false, reason: `hourly limit ${MAX_REQUESTS_PER_HOUR} reached` };
+    return { ok: false, reason: `hourly limit ${MAX_REQUESTS_PER_HOUR}` };
   }
   return { ok: true };
 }
@@ -1166,14 +1149,12 @@ function handle429() {
   if (quotaCooldown.hits >= 3) duration = COOLDOWN_AFTER_429_HITS_3_MS;
   else if (quotaCooldown.hits >= 2) duration = COOLDOWN_AFTER_429_HITS_2_MS;
   else duration = COOLDOWN_AFTER_429_MS;
-
   quotaCooldown.active = true;
   quotaCooldown.until = Date.now() + duration;
   console.warn(`[Quota] Kena 429! Cooldown ${duration / 60000} menit (hit #${quotaCooldown.hits})`);
-  sendTelegram(`⚠️ <b>Gemini quota habis</b>\nCooldown ${duration / 60000} menit.\nBot lanjut pakai fallback mode.`);
+  sendTelegram(`⚠️ <b>Gemini quota habis</b>\nCooldown ${duration / 60000} menit.`);
 }
 
-// ================== SMART CACHE ==================
 function rsiBand(rsi) {
   if (rsi == null) return 'na';
   if (rsi < 35) return 'low';
@@ -1191,79 +1172,96 @@ function shouldSkipGemini(currentPrice, rsiValue, alignmentScore, regime) {
   if (!geminiCache.decision) return false;
   const age = Date.now() - geminiCache.timestamp;
   if (age > CACHE_TTL_MS) return false;
-  // Skip kalau harga gerak kecil
   const priceChange = Math.abs(currentPrice - geminiCache.price) / geminiCache.price;
   if (priceChange > CACHE_PRICE_THRESHOLD) return false;
-  // Skip kalau kondisi berubah
   if (regime !== geminiCache.regime) return false;
   if (rsiBand(rsiValue) !== geminiCache.rsiBand) return false;
   if (alignBand(alignmentScore) !== geminiCache.alignmentBand) return false;
-  return true;   // semua sama → skip
+  return true;
 }
 
-// ================== GEMINI CALL (HEMAT KUOTA) ==================
+// ================== GEMINI CALL (REST API — BYPASS SDK) ==================
 async function callSingleModel(modelName, systemPrompt, attempts = 1) {
   const guard = canCallGemini();
   if (!guard.ok) {
-    console.warn(`[Gemini] Skip call: ${guard.reason}`);
+    console.warn(`[Gemini] Skip: ${guard.reason}`);
     return { ok: false, error: new Error(guard.reason), quotaBlocked: true };
   }
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
       trackGeminiCall();
-      const response = await ai.models.generateContent({
-        model: modelName, contents: systemPrompt,
-        config: { responseMimeType: 'application/json' }
+      const url = `${GEMINI_API_BASE}/models/${modelName}:generateContent`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': GEMINI_API_KEY,
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: systemPrompt }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.4,
+          },
+        }),
+        signal: AbortSignal.timeout(30000),
       });
-      if (response.text) {
-        const cleaned = response.text.replace(/```json|```/g, '').trim();
-        const parsed = JSON.parse(cleaned);
-        if (parsed && typeof parsed.action === 'string') return { ok: true, decision: parsed };
-      }
-    } catch (e) {
-      const msg = e.message || '';
-      console.warn(`[Gemini][${modelName}][a${attempt}] ${msg.slice(0, 120)}`);
 
-      // 429 = quota — jangan retry, langsung stop
-      if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')) {
-        handle429();
-        return { ok: false, error: e, quotaExceeded: true };
-      }
+      if (!response.ok) {
+        const errText = await response.text();
+        const errMsg = `HTTP ${response.status}: ${errText.slice(0, 200)}`;
+        console.warn(`[Gemini REST][${modelName}][a${attempt}] ${errMsg}`);
 
-      // 503 = server sibuk — boleh retry sekali
-      if (msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('500')) {
-        if (attempt < attempts) {
-          await new Promise(r => setTimeout(r, 3000));
-          continue;
+        if (response.status === 429) {
+          handle429();
+          return { ok: false, error: new Error(errMsg), quotaExceeded: true };
         }
-        return { ok: false, error: e };
+        if (response.status === 401 || response.status === 403) {
+          return { ok: false, error: new Error(errMsg), authError: true };
+        }
+        if (response.status === 503 || response.status === 500) {
+          if (attempt < attempts) {
+            await new Promise(r => setTimeout(r, 3000));
+            continue;
+          }
+          return { ok: false, error: new Error(errMsg) };
+        }
+        if (response.status === 404) {
+          return { ok: false, error: new Error(errMsg), modelUnavailable: true };
+        }
+        return { ok: false, error: new Error(errMsg) };
       }
 
-      // 404 = model tidak tersedia — stop, jangan retry
-      if (msg.includes('404') || msg.includes('no longer available')) {
-        return { ok: false, error: e, modelUnavailable: true };
+      const data = await response.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        const cleaned = text.replace(/```json|```/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+        if (parsed && typeof parsed.action === 'string') {
+          return { ok: true, decision: parsed };
+        }
       }
-
-      return { ok: false, error: e };
+      return { ok: false, error: new Error('Respons tidak valid') };
+    } catch (e) {
+      console.warn(`[Gemini REST][${modelName}][a${attempt}] ${e.message}`);
+      if (attempt >= attempts) return { ok: false, error: e };
+      await new Promise(r => setTimeout(r, 2000));
     }
   }
   return { ok: false };
 }
 
 async function callGeminiSingle(systemPrompt) {
-  // Pakai 1 model saja — fallback hanya kalau model utama error bukan quota
   const primary = await callSingleModel(GEMINI_MODELS_PRIMARY[0], systemPrompt, 1);
-
   if (primary.ok) { geminiSuccessCount++; return { ok: true, decision: primary.decision, model: GEMINI_MODELS_PRIMARY[0] }; }
 
-  // Kalau quota → jangan lanjut (menghemat)
   if (primary.quotaExceeded || primary.quotaBlocked) {
     geminiFailCount++;
     return { ok: false, quotaExceeded: true };
   }
 
-  // Kalau model unavailable → coba fallback
   if (primary.modelUnavailable && GEMINI_MODELS_FALLBACK.length > 0) {
     const fb = await callSingleModel(GEMINI_MODELS_FALLBACK[0], systemPrompt, 1);
     if (fb.ok) { geminiSuccessCount++; return { ok: true, decision: fb.decision, model: GEMINI_MODELS_FALLBACK[0] }; }
@@ -1286,7 +1284,6 @@ function fallbackDecision(currentPrice, rsiValue, macdText, rsiText, ensemble) {
     else { decision.action = 'HOLD'; decision.reasoning = `Fallback HOLD ${(pct * 100).toFixed(2)}%`; }
   } else {
     const align = marketContext.alignmentScore;
-    // Pakai ensemble sebagai pengganti AI
     if (ensemble && ensemble.consensus === 'BUY' && align != null && align >= dynamicParams.minAlignment && marketContext.dominantDirection === 'BULL') {
       decision.action = 'BUY';
       decision.reasoning = `Fallback ENSEMBLE BUY (align ${align}, ens ${ensemble.buyPct}%)`;
@@ -1389,11 +1386,9 @@ async function runAutonomousAgent() {
       ? `5 trade: ${recentClosed.map(t => `$${t.pnl.toFixed(2)}`).join(', ')}\nStreak: ${consecutiveWins}W/${consecutiveLosses}L`
       : '(Sesi awal)';
 
-    // ============ SMART CACHE CHECK ============
+    // SMART CACHE
     let agentDecision = { action: 'HOLD', reasoning: 'Menunggu...', confidence: 0 };
     let consensus = 'N/A';
-    let usedCache = false;
-    let geminiBlocked = false;
 
     const skipGemini = shouldSkipGemini(currentPrice, rsiValue, alignScore, marketContext.regime);
 
@@ -1401,19 +1396,15 @@ async function runAutonomousAgent() {
       agentDecision = geminiCache.decision;
       consensus = 'CACHED';
       geminiSkipCount++;
-      usedCache = true;
-      console.log(`[Cache] Skip Gemini — kondisi hampir sama dengan ${Math.round((Date.now() - geminiCache.timestamp) / 1000)}s lalu`);
+      console.log(`[Cache] Skip Gemini — kondisi hampir sama (${Math.round((Date.now() - geminiCache.timestamp) / 1000)}s lalu)`);
     } else {
-      // Cek quota sebelum panggil
       const guard = canCallGemini();
       if (!guard.ok) {
-        geminiBlocked = true;
         agentDecision = fallbackDecision(currentPrice, rsiValue, macdText, rsiText, ensemble);
         lastGeminiStatus = 'quota-blocked';
         consensus = 'QUOTA-FALLBACK';
         console.log(`[Quota] Skip Gemini: ${guard.reason}`);
       } else {
-        // Prompt hanya kalau perlu
         const systemPrompt = `
 Kamu "Orion v5" - AI Trading Agent BTC (${DISPLAY}) INSTITUTIONAL.
 
@@ -1465,7 +1456,6 @@ Balas JSON: {"action":"BUY"|"SELL"|"HOLD"|"CLOSE","confidence":0.85,"reasoning":
           agentDecision = geminiResult.decision;
           consensus = 'AI';
           lastGeminiStatus = `ok/${geminiResult.model}`;
-          // Simpan ke cache
           geminiCache = {
             decision: agentDecision, price: currentPrice,
             regime: marketContext.regime,
@@ -1482,7 +1472,6 @@ Balas JSON: {"action":"BUY"|"SELL"|"HOLD"|"CLOSE","confidence":0.85,"reasoning":
       }
     }
 
-    // Kalibrasi
     if (agentDecision.confidence != null && agentDecision.action !== 'HOLD' && agentDecision.action !== 'CLOSE') {
       agentDecision.calibratedConfidence = getCalibratedConfidence(agentDecision.confidence);
     }
@@ -1735,7 +1724,7 @@ app.get('/api/start-bot', requireAuth, async (req, res) => {
     if (botInterval) clearInterval(botInterval);
     botInterval = setInterval(runAutonomousAgent, LOOP_INTERVAL_MS);
   }
-  res.json({ success: true, message: 'Orion v5 aktif (hemat kuota).' });
+  res.json({ success: true, message: 'Orion v5 aktif (REST API).' });
 });
 
 app.get('/api/stop-bot', requireAuth, (req, res) => {
@@ -1775,12 +1764,35 @@ app.get('/api/force-close', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-// Reset quota cooldown manual
 app.get('/api/reset-quota', requireAuth, (req, res) => {
   quotaCooldown = { active: false, until: 0, hits: 0 };
   dailyGeminiRequests = 0;
   hourlyRequests = [];
   res.json({ success: true, message: 'Quota cooldown direset.' });
+});
+
+// Test endpoint — verifikasi API key
+app.get('/api/test-gemini', requireAuth, async (req, res) => {
+  try {
+    const url = `${GEMINI_API_BASE}/models/${GEMINI_MODELS_PRIMARY[0]}:generateContent`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': GEMINI_API_KEY,
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: 'Balas dengan JSON: {"action":"HOLD","confidence":0.5,"reasoning":"test"}' }] }],
+        generationConfig: { responseMimeType: 'application/json' },
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+    const status = response.status;
+    const text = await response.text();
+    res.json({ success: response.ok, status, response: text.slice(0, 500) });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 app.get('/api/backtest', requireAuth, async (req, res) => {
@@ -1863,14 +1875,15 @@ process.on('SIGINT', () => {
 
 app.listen(port, () => {
   console.log(`═══════════════════════════════════════════════`);
-  console.log(`  Orion v5 — QUOTA-FRIENDLY MODE`);
+  console.log(`  Orion v5 — REST API MODE (bypass SDK bug)`);
   console.log(`═══════════════════════════════════════════════`);
-  console.log(`Loop: ${LOOP_INTERVAL_MS / 60000} menit (bukan 3 menit)`);
-  console.log(`Gemini models: ${GEMINI_MODELS_PRIMARY.join(', ')}`);
+  console.log(`Loop: ${LOOP_INTERVAL_MS / 60000} menit`);
+  console.log(`Gemini endpoint: ${GEMINI_API_BASE}`);
+  console.log(`Model utama: ${GEMINI_MODELS_PRIMARY.join(', ')}`);
+  console.log(`Fallback: ${GEMINI_MODELS_FALLBACK.join(', ')}`);
   console.log(`Daily request limit: ${DAILY_REQUEST_LIMIT}`);
   console.log(`Hourly rate limit: ${MAX_REQUESTS_PER_HOUR}`);
   console.log(`Cache TTL: ${CACHE_TTL_MS / 60000} menit`);
-  console.log(`Cooldown setelah 429: ${COOLDOWN_AFTER_429_MS / 60000} menit`);
   console.log(`Live broker: ${ENABLE_LIVE_BROKER ? '⚠️ AKTIF' : 'simulasi'}`);
   console.log(`Telegram: ${TELEGRAM_ENABLED ? '✅' : '❌'}`);
   console.log(`═══════════════════════════════════════════════`);
